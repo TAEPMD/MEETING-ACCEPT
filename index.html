@@ -515,6 +515,59 @@
         let PIN_HASH_READY = false;
         let currentAdminRole = sessionStorage.getItem('adminRole') || 'admin';
 
+        // ตั้งค่า URL ของ Apps Script Web App สำหรับโหมดที่ deploy หน้าเว็บบน Vercel
+        // ตัวอย่าง: https://script.google.com/macros/s/AKfycb.../exec
+        const gasUrlFromQuery = new URLSearchParams(window.location.search).get('gasApiUrl');
+        if (gasUrlFromQuery) localStorage.setItem('gasApiUrl', gasUrlFromQuery);
+
+        const APP_CONFIG = {
+            gasApiUrl: window.GAS_API_URL || localStorage.getItem('gasApiUrl') || 'PASTE_YOUR_GAS_WEB_APP_URL_HERE'
+        };
+
+        function isGasRuntime() {
+            return typeof google !== 'undefined' && google.script && google.script.run;
+        }
+
+        function isExternalApiReady() {
+            return APP_CONFIG.gasApiUrl && APP_CONFIG.gasApiUrl.indexOf('PASTE_YOUR_GAS_WEB_APP_URL_HERE') === -1;
+        }
+
+        function callServer(action, args, onSuccess, onFailure) {
+            const ok = typeof onSuccess === 'function' ? onSuccess : function(){};
+            const fail = typeof onFailure === 'function' ? onFailure : function(){};
+            const safeArgs = Array.isArray(args) ? args : [];
+
+            if (isGasRuntime()) {
+                try {
+                    const runner = google.script.run.withSuccessHandler(ok).withFailureHandler(fail);
+                    runner[action].apply(runner, safeArgs);
+                } catch (err) {
+                    fail(err);
+                }
+                return;
+            }
+
+            if (!isExternalApiReady()) {
+                fail('ยังไม่ได้ตั้งค่า APP_CONFIG.gasApiUrl สำหรับโหมด Vercel');
+                return;
+            }
+
+            const body = new URLSearchParams();
+            body.set('action', action);
+            body.set('payload', JSON.stringify(safeArgs));
+
+            fetch(APP_CONFIG.gasApiUrl, {
+                method: 'POST',
+                body: body
+            })
+                .then(resp => resp.json())
+                .then(json => {
+                    if (json && json.success) ok(json.data);
+                    else fail((json && json.error) || 'Server response error');
+                })
+                .catch(fail);
+        }
+
         // --- Hashing ---
         async function getSHA256Hash(text) {
             const msgUint8 = new TextEncoder().encode(text);
@@ -531,8 +584,7 @@
             if (roleSelect) roleSelect.value = currentAdminRole;
             updateAdminRoleBadge();
 
-            google.script.run
-                .withSuccessHandler(function(serverData) {
+            callServer('getInitialData', [], function(serverData) {
                     db = serverData;
                     document.getElementById('global-loader').style.opacity = '0';
                     setTimeout(() => {
@@ -541,11 +593,9 @@
                         renderAdminMeetingsList();
                         populateMeetingDropdowns();
                     }, 300);
-                })
-                .withFailureHandler(function(err) {
+                }, function(err) {
                     Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้', 'error');
-                })
-                .getInitialData();
+                });
         };
 
         function handleAdminRoleChange() {
@@ -691,9 +741,9 @@
             }
             
             // ส่งไป Server
-            if(typeof google !== 'undefined') google.script.run
-                .withFailureHandler(function(err) { showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้'); })
-                .saveMeetingToServer(meeting);
+            callServer('saveMeetingToServer', [meeting], function() {}, function(err) {
+                showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้');
+            });
 
             showAlert('success', 'บันทึกสำเร็จ', 'อัปเดตข้อมูลการประชุมแล้ว');
             resetMeetingForm(); renderAdminMeetingsList(); populateMeetingDropdowns();
@@ -730,9 +780,9 @@
                 if (result.isConfirmed) {
                     db.meetings = db.meetings.filter(m => m.id !== id); delete db.attendees[id];
                     // ส่งไปลบบน Server
-                    if(typeof google !== 'undefined') google.script.run
-                        .withFailureHandler(function(err) { showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถลบข้อมูลได้'); })
-                        .deleteMeetingFromServer(id);
+                    callServer('deleteMeetingFromServer', [id], function(){}, function(err) {
+                        showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถลบข้อมูลได้');
+                    });
                     renderAdminMeetingsList(); populateMeetingDropdowns();
                 }
             });
@@ -783,16 +833,12 @@
             renderAdminMeetingsList();
             populateMeetingDropdowns();
 
-            if (typeof google !== 'undefined') {
-                google.script.run
-                    .withFailureHandler(function() {
-                        db.meetings[meetingIndex].isActive = !nextState;
-                        renderAdminMeetingsList();
-                        populateMeetingDropdowns();
-                        showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถอัปเดตสถานะ Active/Inactive ได้');
-                    })
-                    .setMeetingActiveStatus(mtgId, !!nextState);
-            }
+            callServer('setMeetingActiveStatus', [mtgId, !!nextState], function(){}, function() {
+                db.meetings[meetingIndex].isActive = !nextState;
+                renderAdminMeetingsList();
+                populateMeetingDropdowns();
+                showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถอัปเดตสถานะ Active/Inactive ได้');
+            });
         }
 
         function getMeetingById(mtgId) {
@@ -839,16 +885,14 @@
                 const oldFileId = meeting.agendaFileId || '';
                 const allowedRoles = getAllowedUploadRolesForMeeting(mtgId);
 
-                if (typeof google !== 'undefined') {
-                    google.script.run
-                        .withSuccessHandler(function(result) {
+                if (isGasRuntime() || isExternalApiReady()) {
+                    callServer('uploadMeetingAgendaToDrive', [base64Data, file.name, mtgId, oldFileId, currentAdminRole, allowedRoles], function(result) {
                             if (result.success) {
                                 db.meetings[mtgIndex].agendaUrl = result.url;
                                 db.meetings[mtgIndex].agendaName = result.name;
                                 db.meetings[mtgIndex].agendaFileId = result.fileId;
 
-                                google.script.run
-                                    .withSuccessHandler(function(saved) {
+                                callServer('saveMeetingAgendaToServer', [mtgId, result.url, result.name, result.fileId], function(saved) {
                                         document.getElementById('global-loader').classList.add('hidden');
                                         if (!saved) {
                                             showAlert('warning', 'อัปเดตบางส่วน', 'อัปโหลดไฟล์สำเร็จ แต่ไม่พบรายการประชุมสำหรับบันทึกวาระ');
@@ -856,35 +900,28 @@
                                         }
 
                                         // โหลดข้อมูลล่าสุดจาก server ป้องกันวาระหายจาก state ไม่ตรงกัน
-                                        google.script.run
-                                            .withSuccessHandler(function(serverData) {
+                                        callServer('getInitialData', [], function(serverData) {
                                                 db = serverData;
                                                 renderAdminMeetingsList();
                                                 populateMeetingDropdowns();
                                                 showAlert('success', 'อัปโหลดสำเร็จ', 'ระบบแนบไฟล์วาระการประชุมเรียบร้อยแล้ว');
-                                            })
-                                            .withFailureHandler(function() {
+                                            }, function() {
                                                 // ถ้ารีเฟรชไม่สำเร็จ ให้แสดงจาก local state ก่อน
                                                 renderAdminMeetingsList();
                                                 showAlert('success', 'อัปโหลดสำเร็จ', 'บันทึกวาระแล้ว แต่รีเฟรชข้อมูลล่าสุดไม่สำเร็จ');
-                                            })
-                                            .getInitialData();
-                                    })
-                                    .withFailureHandler(function() {
+                                            });
+                                    }, function() {
                                         document.getElementById('global-loader').classList.add('hidden');
                                         showAlert('warning', 'อัปเดตบางส่วน', 'อัปโหลดไฟล์สำเร็จ แต่บันทึกวาระลงฐานข้อมูลไม่สำเร็จ');
-                                    })
-                                    .saveMeetingAgendaToServer(mtgId, result.url, result.name, result.fileId);
+                                    });
                             } else {
                                 document.getElementById('global-loader').classList.add('hidden');
                                 showAlert('error', 'อัปโหลดไม่สำเร็จ', result.error || 'ไม่สามารถอัปโหลดไฟล์ได้');
                             }
-                        })
-                        .withFailureHandler(function() {
+                        }, function() {
                             document.getElementById('global-loader').classList.add('hidden');
                             showAlert('error', 'เชื่อมต่อไม่สำเร็จ', 'ไม่สามารถเชื่อมต่อกับ Server ได้');
-                        })
-                        .uploadMeetingAgendaToDrive(base64Data, file.name, mtgId, oldFileId, currentAdminRole, allowedRoles);
+                        });
                 } else {
                     db.meetings[mtgIndex].agendaUrl = ev.target.result;
                     db.meetings[mtgIndex].agendaName = file.name;
@@ -916,9 +953,9 @@
         }
 
         function syncAttendeesToServer(mtgId) {
-            if(typeof google !== 'undefined') google.script.run
-                .withFailureHandler(function(err) { showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถซิงค์ข้อมูลรายชื่อได้'); })
-                .saveAttendeesToServer(mtgId, db.attendees[mtgId]);
+            callServer('saveAttendeesToServer', [mtgId, db.attendees[mtgId]], function(){}, function(err) {
+                showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถซิงค์ข้อมูลรายชื่อได้');
+            });
         }
 
         function renderAttendees() {
@@ -974,12 +1011,11 @@
                 reader.onload = function(e) {
                     const base64Data = e.target.result.split(',')[1];
                     
-                    if(typeof google !== 'undefined') {
+                    if(isGasRuntime() || isExternalApiReady()) {
                         // โยนให้ฝั่ง Server รับผิดชอบไปสร้างไฟล์ใน Drive พร้อมส่ง oldFileId เพื่อลบไฟล์เก่า
                         const oldFileId = db.attendees[mtgId][userIndex].fileId || "";
                         const allowedRoles = getAllowedUploadRolesForMeeting(mtgId);
-                        google.script.run
-                            .withSuccessHandler(function(result) {
+                        callServer('uploadPdfToDrive', [base64Data, file.name, mtgId, name, oldFileId, currentAdminRole, allowedRoles], function(result) {
                                 document.getElementById('pdf-upload-loading').classList.add('hidden');
                                 if(result.success) {
                                     db.attendees[mtgId][userIndex].pdfUrl = result.url;
@@ -990,12 +1026,10 @@
                                 } else {
                                     showAlert('error', 'ข้อผิดพลาด', 'อัปโหลดลง Drive ไม่สำเร็จ: ' + (result.error || "Unknown error"));
                                 }
-                            })
-                            .withFailureHandler(function(err) {
+                            }, function(err) {
                                 document.getElementById('pdf-upload-loading').classList.add('hidden');
                                 showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อกับ Server ได้');
-                            })
-                            .uploadPdfToDrive(base64Data, file.name, mtgId, name, oldFileId, currentAdminRole, allowedRoles);
+                            });
                     } else {
                         // Mock Preview Mode
                         setTimeout(() => {
@@ -1540,9 +1574,9 @@
             if (existingIndex > -1) db.responses[existingIndex] = data;
             else db.responses.push(data);
 
-            if(typeof google !== 'undefined') google.script.run
-                .withFailureHandler(function(err) { console.error('Failed to save response:', err); })
-                .saveResponseToServer(data);
+            callServer('saveResponseToServer', [data], function(){}, function(err) {
+                console.error('Failed to save response:', err);
+            });
 
             currentEditableResponseId = data.id;
             isEditingExistingResponse = false;
