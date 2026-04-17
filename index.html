@@ -1,0 +1,1668 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ระบบตอบรับการเข้าร่วมประชุม - สพฉ.</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Prompt for Headings, Sarabun for Body -->
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&family=Sarabun:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { 
+                        sans: ['Sarabun', 'sans-serif'],
+                        heading: ['Prompt', 'sans-serif']
+                    },
+                    colors: {
+                        apple: { bg: '#F5F5F7', surface: '#FFFFFF', text: '#1D1D1F', muted: '#86868B', border: '#E5E5EA', gray: '#F2F2F7' },
+                        ems: { yellow: '#EDFF21', dark: '#1D1D1F', red: '#FF3B30', green: '#34C759' }
+                    },
+                    boxShadow: { 'apple': '0 4px 24px rgba(0, 0, 0, 0.04)', 'apple-hover': '0 8px 32px rgba(0, 0, 0, 0.08)' }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #F5F5F7; color: #1D1D1F; -webkit-font-smoothing: antialiased; }
+        h1, h2, h3, h4, .font-heading { font-family: 'Prompt', sans-serif; }
+        
+        .apple-input { background-color: #F2F2F7; border: 1px solid transparent; border-radius: 12px; padding: 12px 16px; width: 100%; transition: all 0.2s ease; color: #1D1D1F; }
+        .apple-input:focus { background-color: #FFFFFF; border-color: #EDFF21; outline: none; box-shadow: 0 0 0 3px rgba(237, 255, 33, 0.3); }
+        
+        select.apple-input { appearance: none; background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2386868B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e"); background-repeat: no-repeat; background-position: right 12px center; background-size: 16px; padding-right: 40px; }
+        .segmented-control { display: flex; background-color: #E5E5EA; border-radius: 9px; padding: 2px; }
+        .segmented-control button { flex: 1; padding: 6px 12px; border-radius: 7px; font-size: 14px; font-weight: 500; color: #1D1D1F; transition: all 0.2s ease; white-space: nowrap; }
+        .segmented-control button.active { background-color: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #D1D1D6; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #86868B; }
+
+        .app-view { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        @media print {
+            @page { margin: 12mm; }
+            html, body { margin: 0 !important; padding: 0 !important; background: white !important; }
+            body * { visibility: hidden; }
+            #print-section, #print-section * { visibility: visible; }
+            #print-section { position: absolute; left: 0; top: 0; width: 100%; margin: 0; background-color: white; padding: 20px; font-family: 'Sarabun', sans-serif; display: block !important; }
+            .no-print { display: none !important; }
+        }
+
+        .swal2-popup { border-radius: 24px !important; font-family: 'Prompt', sans-serif !important; }
+        .swal2-confirm { border-radius: 999px !important; }
+        .swal2-cancel { border-radius: 999px !important; }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen">
+
+    <!-- Global Loading Overlay -->
+    <div id="global-loader" class="fixed inset-0 bg-white/90 backdrop-blur-md z-[100] flex flex-col items-center justify-center transition-opacity duration-300">
+        <i class="fa-solid fa-star-of-life fa-spin text-5xl text-ems-dark mb-4"></i>
+        <h2 class="font-heading font-bold text-xl text-apple-text">กำลังเชื่อมต่อฐานข้อมูล...</h2>
+        <p class="text-sm text-apple-muted">สถาบันการแพทย์ฉุกเฉินแห่งชาติ</p>
+    </div>
+
+    <input type="file" id="temp-file-input" accept=".pdf" class="hidden" onchange="handleIndividualUpload(event)">
+    <input type="file" id="agenda-file-input" class="hidden" onchange="handleAgendaUpload(event)">
+
+    <!-- Navigation Bar -->
+    <nav class="sticky top-0 z-50 backdrop-blur-md bg-white/70 border-b border-apple-border no-print">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-ems-yellow rounded-xl flex items-center justify-center text-ems-dark text-lg shadow-sm">
+                    <i class="fa-solid fa-star-of-life"></i>
+                </div>
+                <div>
+                    <h1 class="font-heading font-semibold text-apple-text leading-tight text-sm sm:text-base">สถาบันการแพทย์ฉุกเฉินแห่งชาติ</h1>
+                    <p class="text-xs text-apple-muted">ระบบตอบรับการประชุม</p>
+                </div>
+            </div>
+            <button onclick="showView('role-selection')" class="w-10 h-10 rounded-full hover:bg-apple-gray flex items-center justify-center text-apple-text transition-colors">
+                <i class="fa-solid fa-house"></i>
+            </button>
+        </div>
+    </nav>
+
+    <main class="flex-grow overflow-x-hidden overflow-y-auto px-4 py-8 sm:px-6 lg:px-8 relative">
+        <div class="max-w-5xl mx-auto">
+            
+            <!-- 1. Role Selection View -->
+            <div id="view-role-selection" class="app-view space-y-8 hidden">
+                <div class="text-center mb-10">
+                    <h2 class="text-3xl font-heading font-bold text-apple-text mb-2">ยินดีต้อนรับ</h2>
+                    <p class="text-apple-muted">กรุณาเลือกรูปแบบการเข้าใช้งานระบบ</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
+                    <div onclick="showView('user-dashboard')" class="bg-apple-surface rounded-3xl p-8 shadow-apple hover:shadow-apple-hover transition-all duration-300 cursor-pointer flex flex-col items-center text-center group border border-transparent hover:border-apple-border">
+                        <div class="w-20 h-20 bg-apple-gray rounded-full flex items-center justify-center text-3xl text-apple-text group-hover:scale-110 transition-transform duration-300 mb-6">
+                            <i class="fa-solid fa-user-check"></i>
+                        </div>
+                        <h3 class="font-heading font-semibold text-xl mb-2">ผู้เข้าร่วมประชุม</h3>
+                        <p class="text-sm text-apple-muted">ตอบรับการเข้าร่วม แจ้งเหตุผล และดาวน์โหลดหนังสือเชิญส่วนตัว</p>
+                        <div class="mt-6 px-6 py-2 rounded-full bg-apple-gray text-sm font-medium text-apple-text group-hover:bg-ems-yellow group-hover:text-ems-dark transition-colors">
+                            เข้าสู่ระบบ <i class="fa-solid fa-arrow-right ml-1"></i>
+                        </div>
+                    </div>
+
+                    <div onclick="verifyAdminAccess()" class="bg-apple-surface rounded-3xl p-8 shadow-apple hover:shadow-apple-hover transition-all duration-300 cursor-pointer flex flex-col items-center text-center group border border-transparent hover:border-apple-border">
+                        <div class="w-20 h-20 bg-apple-gray rounded-full flex items-center justify-center text-3xl text-apple-text group-hover:scale-110 transition-transform duration-300 mb-6">
+                            <i class="fa-solid fa-sliders"></i>
+                        </div>
+                        <h3 class="font-heading font-semibold text-xl mb-2">ผู้ดูแลระบบ</h3>
+                        <p class="text-sm text-apple-muted">จัดการประชุม แนบไฟล์ และตรวจสอบประวัติการตอบรับ</p>
+                        <div class="mt-6 px-6 py-2 rounded-full bg-apple-gray text-sm font-medium text-apple-text group-hover:bg-ems-yellow group-hover:text-ems-dark transition-colors">
+                            <i class="fa-solid fa-lock mr-1 text-xs"></i> จัดการระบบ
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. Admin Dashboard View -->
+            <div id="view-admin-dashboard" class="app-view hidden">
+                <div class="mb-8 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-2xl font-heading font-bold flex items-center gap-2">
+                            <i class="fa-solid fa-unlock-keyhole text-ems-green text-xl"></i> การจัดการระบบ
+                        </h2>
+                        <p class="text-apple-muted text-sm">ส่วนสำหรับผู้ดูแลระบบ (Admin)</p>
+                    </div>
+                    
+                    <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full lg:w-auto">
+                        <div class="flex items-center gap-2 bg-apple-surface border border-apple-border rounded-full px-3 py-1.5 w-full sm:w-auto">
+                            <i class="fa-solid fa-user-shield text-apple-muted text-sm"></i>
+                            <select id="admin-role" onchange="handleAdminRoleChange()" class="bg-transparent text-sm text-apple-text focus:outline-none">
+                                <option value="admin">admin</option>
+                                <option value="secretary">secretary</option>
+                                <option value="coordinator">coordinator</option>
+                            </select>
+                            <span id="admin-role-badge" class="text-[10px] bg-apple-gray px-2 py-0.5 rounded-full text-apple-muted">Role</span>
+                        </div>
+                        <div class="flex items-center gap-2 bg-apple-surface border border-apple-border rounded-full px-3 py-1.5 w-full sm:w-auto">
+                            <i class="fa-solid fa-filter text-apple-muted text-sm"></i>
+                            <select id="meeting-status-filter" onchange="renderAdminMeetingsList()" class="bg-transparent text-sm text-apple-text focus:outline-none">
+                                <option value="all">ทั้งหมด</option>
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
+                        </div>
+                        <div class="segmented-control flex-grow sm:flex-grow-0 w-full overflow-x-auto">
+                            <button id="tab-meetings" onclick="switchAdminTab('meetings')" class="active">การประชุม</button>
+                            <button id="tab-attendees" onclick="switchAdminTab('attendees')">รายชื่อ & เอกสาร</button>
+                            <button id="tab-history" onclick="switchAdminTab('history')">ประวัติ</button>
+                        </div>
+                        <button onclick="adminLogout()" class="w-10 h-10 rounded-full bg-apple-surface border border-apple-border text-apple-muted hover:text-ems-red hover:bg-red-50 transition-colors flex items-center justify-center shrink-0 self-end sm:self-auto" title="ออกจากระบบ Admin">
+                            <i class="fa-solid fa-right-from-bracket"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Admin Tab: Meetings -->
+                <div id="admin-tab-meetings" class="admin-tab-content space-y-6">
+                    <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple">
+                        <h3 class="font-heading font-semibold text-lg mb-6 flex items-center gap-2" id="meeting-form-title">
+                            <i class="fa-solid fa-calendar-plus text-apple-muted"></i> เพิ่มการประชุมใหม่
+                        </h3>
+                        <form id="form-meeting" class="grid grid-cols-1 md:grid-cols-2 gap-5" onsubmit="handleSaveMeeting(event)">
+                            <input type="hidden" id="mtg-id">
+                            <div class="md:col-span-2">
+                                <label class="block text-sm text-apple-muted mb-1 ml-1">หัวข้อการประชุม/อบรม</label>
+                                <input type="text" id="mtg-topic" required class="apple-input" placeholder="ระบุหัวข้อ...">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-apple-muted mb-1 ml-1">วันที่</label>
+                                <input type="date" id="mtg-date" required class="apple-input">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-apple-muted mb-1 ml-1">เวลา</label>
+                                <input type="time" id="mtg-time" required class="apple-input">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-apple-muted mb-1 ml-1">สถานที่</label>
+                                <input type="text" id="mtg-location" class="apple-input" placeholder="ระบุสถานที่ เช่น ห้องประชุม สพฉ.">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-apple-muted mb-1 ml-1">ลิงก์ออนไลน์ (ถ้ามี)</label>
+                                <input type="url" id="mtg-online-link" class="apple-input" placeholder="https://zoom.us/... หรือ Google Meet">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-apple-muted mb-1 ml-1">อนุญาตบทบาทที่อัปโหลดไฟล์ได้</label>
+                                <input type="text" id="mtg-upload-roles" class="apple-input" placeholder="เช่น admin,secretary,coordinator">
+                            </div>
+                            <div class="flex items-center gap-3 bg-apple-gray rounded-2xl px-4 py-3">
+                                <input type="checkbox" id="mtg-hybrid-enabled" class="w-5 h-5 accent-[#1D1D1F]">
+                                <div>
+                                    <p class="font-heading font-medium text-sm">เปิดใช้งาน Hybrid Meeting</p>
+                                    <p class="text-xs text-apple-muted">ถ้าเปิด ผู้ตอบรับที่เลือก "เข้าร่วม" ต้องเลือก Onsite หรือ Online</p>
+                                </div>
+                            </div>
+                            <div class="md:col-span-2 flex justify-end gap-3 mt-4">
+                                <button type="button" onclick="resetMeetingForm()" class="px-6 py-2.5 rounded-full bg-apple-gray text-apple-text font-medium hover:bg-gray-200 transition-colors">ยกเลิก</button>
+                                <button type="submit" class="px-6 py-2.5 rounded-full bg-ems-yellow text-ems-dark font-semibold shadow-sm hover:scale-105 transition-transform"><i class="fa-solid fa-check mr-1"></i> บันทึกข้อมูล</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple">
+                        <h3 class="font-heading font-semibold text-lg mb-4">รายการทั้งหมด</h3>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse min-w-[600px]">
+                                <thead>
+                                    <tr class="text-apple-muted text-sm border-b border-apple-border">
+                                        <th class="pb-3 font-normal">หัวข้อ</th>
+                                        <th class="pb-3 font-normal">วัน-เวลา</th>
+                                        <th class="pb-3 font-normal">สถานที่</th>
+                                        <th class="pb-3 font-normal">สถานะ</th>
+                                        <th class="pb-3 font-normal">วาระ</th>
+                                        <th class="pb-3 font-normal text-right">จัดการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-meetings-list" class="divide-y divide-apple-border"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Admin Tab: Attendees -->
+                <div id="admin-tab-attendees" class="admin-tab-content hidden space-y-6">
+                    <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple">
+                        <label class="block text-sm text-apple-muted mb-2 ml-1">เลือกการประชุมที่ต้องการจัดการรายชื่อ</label>
+                        <select id="admin-select-meeting" onchange="renderAttendees()" class="apple-input font-heading text-lg">
+                            <option value="">-- กรุณาเลือก --</option>
+                        </select>
+                    </div>
+
+                    <div id="attendee-manager" class="hidden space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="bg-apple-surface rounded-3xl p-6 shadow-apple flex flex-col justify-between">
+                                <div>
+                                    <h4 class="font-heading font-medium mb-1">เพิ่มรายบุคคล</h4>
+                                    <p class="text-xs text-apple-muted mb-4">ระบุชื่อ-นามสกุล และกดเพิ่ม</p>
+                                    <input type="text" id="new-attendee-name" placeholder="เช่น ดร.เต้ ปฏิบัติการ" class="apple-input mb-4" onkeypress="if(event.key === 'Enter') addAttendee()">
+                                </div>
+                                <button onclick="addAttendee()" class="w-full py-2.5 rounded-xl bg-apple-text text-white font-medium hover:bg-gray-800 transition-colors"><i class="fa-solid fa-plus mr-1"></i> เพิ่มชื่อ</button>
+                            </div>
+
+                            <div class="bg-apple-surface rounded-3xl p-6 shadow-apple flex flex-col justify-between border-2 border-dashed border-apple-border">
+                                <div>
+                                    <h4 class="font-heading font-medium mb-1">นำเข้าจาก CSV</h4>
+                                    <p class="text-xs text-apple-muted mb-4">ไฟล์ 1 คอลัมน์ บรรทัดละ 1 ชื่อ</p>
+                                    <input type="file" id="csv-file" accept=".csv" class="block w-full text-sm text-apple-muted file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-medium file:bg-apple-gray file:text-apple-text hover:file:bg-gray-200 cursor-pointer mb-4">
+                                </div>
+                                <button onclick="importCSV()" class="w-full py-2.5 rounded-xl bg-ems-yellow text-ems-dark font-medium shadow-sm hover:scale-105 transition-transform"><i class="fa-solid fa-file-import mr-1"></i> อัปโหลดไฟล์</button>
+                            </div>
+                        </div>
+
+                        <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple relative">
+                            <div class="flex justify-between items-center mb-6">
+                                <div>
+                                    <h3 class="font-heading font-semibold text-lg">รายชื่อผู้มีสิทธิ์เข้าร่วม</h3>
+                                    <p class="text-sm text-apple-muted">รวม <span id="attendee-count" class="font-bold text-apple-text">0</span> คน</p>
+                                </div>
+                                <button onclick="clearAllAttendees()" class="text-sm text-ems-red bg-red-50 px-3 py-1.5 rounded-full hover:bg-red-100 transition-colors"><i class="fa-solid fa-trash-can mr-1"></i> ล้างทั้งหมด</button>
+                            </div>
+
+                            <div id="pdf-upload-loading" class="hidden absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center z-10 rounded-3xl">
+                                <i class="fa-solid fa-circle-notch fa-spin text-3xl text-apple-text mb-3"></i>
+                                <p class="font-heading font-medium">กำลังแนบไฟล์ขึ้นระบบ Drive...</p>
+                            </div>
+
+                            <ul id="attendees-list" class="divide-y divide-apple-border max-h-[500px] overflow-y-auto pr-2"></ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Admin Tab: History -->
+                <div id="admin-tab-history" class="admin-tab-content hidden space-y-6">
+                    <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple flex flex-col md:flex-row md:items-center gap-4 justify-between">
+                        <div class="flex-grow w-full">
+                            <label class="block text-sm text-apple-muted mb-2 ml-1">กรองตามการประชุม</label>
+                            <select id="admin-history-filter" onchange="renderHistory()" class="apple-input font-heading text-base md:text-lg">
+                                <option value="all">-- แสดงประวัติการตอบรับทั้งหมด --</option>
+                            </select>
+                        </div>
+                        <div class="w-full md:w-56">
+                            <label class="block text-sm text-apple-muted mb-2 ml-1">กรองตามสถานะ</label>
+                            <select id="admin-history-status-filter" onchange="renderHistory()" class="apple-input">
+                                <option value="all">ทั้งหมด</option>
+                                <option value="attend">เข้าร่วม</option>
+                                <option value="not_attend">ไม่เข้าร่วม</option>
+                                <option value="online">Online</option>
+                                <option value="onsite">Onsite</option>
+                            </select>
+                        </div>
+                        <div class="w-full md:w-56">
+                            <label class="block text-sm text-apple-muted mb-2 ml-1">เรียงลำดับ</label>
+                            <select id="admin-history-sort" onchange="renderHistory()" class="apple-input">
+                                <option value="latest">ล่าสุดก่อน</option>
+                                <option value="oldest">เก่าสุดก่อน</option>
+                                <option value="name_asc">ชื่อ A-Z</option>
+                                <option value="name_desc">ชื่อ Z-A</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-heading font-semibold text-lg">ข้อมูลการตอบรับ</h3>
+                            <span class="bg-apple-gray text-apple-text text-xs font-bold px-3 py-1 rounded-full"><span id="history-count">0</span> รายการ</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse min-w-[800px]">
+                                <thead>
+                                    <tr class="text-apple-muted text-sm border-b border-apple-border">
+                                        <th class="pb-3 font-normal">ชื่อผู้ตอบรับ</th>
+                                        <th class="pb-3 font-normal">หัวข้อประชุม</th>
+                                        <th class="pb-3 font-normal">สถานะ</th>
+                                        <th class="pb-3 font-normal">เวลาบันทึก</th>
+                                        <th class="pb-3 font-normal text-right">เอกสาร</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-history-list" class="divide-y divide-apple-border text-sm"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- 3. User Dashboard View -->
+            <div id="view-user-dashboard" class="app-view hidden">
+                <div class="mb-8">
+                    <h2 class="text-2xl font-heading font-bold">ตอบรับเข้าร่วมประชุม</h2>
+                    <p class="text-apple-muted text-sm">กรุณาระบุข้อมูลตามความเป็นจริง</p>
+                </div>
+
+                <div class="bg-apple-surface rounded-3xl p-6 sm:p-10 shadow-apple">
+                    <div class="mb-8">
+                        <label class="block font-heading font-medium mb-3 text-lg">1. เลือกการประชุม</label>
+                        <select id="user-select-meeting" onchange="handleUserMeetingSelect()" class="apple-input text-lg py-4">
+                            <option value="">-- แตะเพื่อเลือกการประชุม --</option>
+                        </select>
+                    </div>
+
+                    <form id="user-response-form" class="hidden space-y-8" onsubmit="submitResponse(event)">
+                        <div class="bg-apple-gray p-5 rounded-2xl">
+                            <h3 id="u-mtg-topic" class="font-heading font-semibold text-lg mb-2">ชื่อการประชุม</h3>
+                            <div class="space-y-1 text-sm text-apple-muted">
+                                <p><i class="fa-regular fa-calendar w-5"></i> <span id="u-mtg-date"></span>, <span id="u-mtg-time"></span> น.</p>
+                                <p><i class="fa-solid fa-location-dot w-5"></i> <span id="u-mtg-location"></span></p>
+                                <p id="u-mtg-online-row" class="hidden"><i class="fa-solid fa-link w-5"></i> <a id="u-mtg-online-link" href="#" target="_blank" class="text-blue-600 underline"></a></p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block font-heading font-medium mb-3 text-lg">2. เลือกชื่อของคุณ</label>
+                            <select id="user-name" onchange="handleUserNameSelect()" required class="apple-input text-lg py-3">
+                                <option value="">-- แตะเพื่อค้นหาชื่อ --</option>
+                            </select>
+                            <p class="text-xs text-apple-muted mt-2 ml-1">หากไม่พบชื่อ กรุณาติดต่อผู้จัดงาน สพฉ.</p>
+                        </div>
+
+                        <div id="response-locked-banner" class="hidden bg-orange-50 border border-orange-200 p-5 rounded-2xl">
+                            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                <div>
+                                    <h4 class="font-heading font-semibold text-orange-800">คุณได้ตอบรับการประชุมนี้แล้ว</h4>
+                                    <p id="response-locked-summary" class="text-sm text-orange-700 mt-1">ระบบล็อกตัวเลือกไว้เพื่อป้องกันการบันทึกซ้ำ</p>
+                                </div>
+                                <button type="button" onclick="requestEditResponse()" class="px-5 py-2.5 rounded-full bg-white border border-orange-300 text-orange-700 font-medium hover:bg-orange-100 transition-colors whitespace-nowrap">
+                                    <i class="fa-solid fa-pen-to-square mr-1"></i> แก้ไขแบบตอบรับ
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="invitation-download-section" class="hidden bg-ems-yellow/10 border border-ems-yellow/30 p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 transition-all">
+                            <div class="flex items-start gap-3">
+                                <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-ems-dark shadow-sm shrink-0">
+                                    <i class="fa-solid fa-file-pdf text-xl"></i>
+                                </div>
+                                <div>
+                                    <h4 class="font-heading font-semibold text-ems-dark">หนังสือเชิญส่วนบุคคล</h4>
+                                    <p class="text-xs text-ems-dark/70">สพฉ. ได้แนบเอกสารสำหรับคุณไว้แล้ว</p>
+                                </div>
+                            </div>
+                            <a id="download-invitation-btn" href="#" target="_blank" class="w-full sm:w-auto px-5 py-2.5 bg-ems-yellow text-ems-dark font-medium rounded-full text-center shadow-sm hover:scale-105 transition-transform text-sm">
+                                <i class="fa-solid fa-download mr-1"></i> ดาวน์โหลด
+                            </a>
+                        </div>
+
+                        <div id="agenda-download-section" class="hidden bg-blue-50 border border-blue-200 p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 transition-all">
+                            <div class="flex items-start gap-3">
+                                <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-blue-600 shadow-sm shrink-0">
+                                    <i class="fa-solid fa-file-lines text-xl"></i>
+                                </div>
+                                <div>
+                                    <h4 class="font-heading font-semibold text-blue-800">วาระการประชุม</h4>
+                                    <p id="agenda-file-name" class="text-xs text-blue-700/80">ไฟล์แนบสำหรับผู้เข้าร่วมทุกคน</p>
+                                </div>
+                            </div>
+                            <a id="download-agenda-btn" href="#" target="_blank" class="w-full sm:w-auto px-5 py-2.5 bg-blue-600 text-white font-medium rounded-full text-center shadow-sm hover:scale-105 transition-transform text-sm">
+                                <i class="fa-solid fa-download mr-1"></i> ดาวน์โหลดวาระ
+                            </a>
+                        </div>
+
+                        <div id="attendance-section" class="hidden">
+                            <label class="block font-heading font-medium mb-3 text-lg">3. สถานะการเข้าร่วม</label>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <label class="relative cursor-pointer group">
+                                    <input type="radio" name="attendance" value="attend" class="peer sr-only" onchange="toggleReasonField()" required>
+                                    <div class="p-5 border-2 border-apple-border rounded-2xl peer-checked:border-ems-green peer-checked:bg-green-50 transition-all text-center">
+                                        <div class="w-12 h-12 mx-auto rounded-full bg-apple-gray text-apple-muted peer-checked:bg-ems-green peer-checked:text-white flex items-center justify-center text-xl mb-3 transition-colors">
+                                            <i class="fa-solid fa-check"></i>
+                                        </div>
+                                        <span class="font-heading font-medium block">ยินดีเข้าร่วม</span>
+                                    </div>
+                                </label>
+                                
+                                <label class="relative cursor-pointer group">
+                                    <input type="radio" name="attendance" value="not_attend" class="peer sr-only" onchange="toggleReasonField()">
+                                    <div class="p-5 border-2 border-apple-border rounded-2xl peer-checked:border-ems-red peer-checked:bg-red-50 transition-all text-center">
+                                        <div class="w-12 h-12 mx-auto rounded-full bg-apple-gray text-apple-muted peer-checked:bg-ems-red peer-checked:text-white flex items-center justify-center text-xl mb-3 transition-colors">
+                                            <i class="fa-solid fa-xmark"></i>
+                                        </div>
+                                        <span class="font-heading font-medium block">ไม่สามารถเข้าร่วมได้</span>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div id="attendance-mode-container" class="hidden animate-[fadeIn_0.3s_ease-out]">
+                            <label class="block font-heading font-medium mb-3 text-lg">3.1 รูปแบบการเข้าร่วม (Hybrid)</label>
+                            <select id="attendance-mode" class="apple-input text-lg py-3">
+                                <option value="">-- กรุณาเลือกรูปแบบ --</option>
+                                <option value="onsite">Onsite</option>
+                                <option value="online">Online</option>
+                            </select>
+                        </div>
+
+                        <div id="reason-container" class="hidden animate-[fadeIn_0.3s_ease-out]">
+                            <label class="block text-sm font-medium mb-2 ml-1 text-ems-red">โปรดระบุเหตุผล <span class="text-xl leading-none">*</span></label>
+                            <textarea id="user-reason" rows="3" class="apple-input" placeholder="เช่น ติดภารกิจด่วน, ลาป่วย..."></textarea>
+                        </div>
+
+                        <div class="pt-6 border-t border-apple-border">
+                            <button id="submit-response-btn" type="submit" class="w-full py-4 rounded-2xl bg-gray-300 text-gray-500 font-heading font-semibold text-lg transition-all">
+                                ยืนยันการตอบรับ
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Print Section -->
+    <div id="print-section" class="hidden">
+        <div class="text-center mb-8 border-b-2 border-black pb-6">
+            <h1 class="text-2xl font-bold font-heading mb-1">สถาบันการแพทย์ฉุกเฉินแห่งชาติ (สพฉ.)</h1>
+            <h2 class="text-xl">ใบยืนยันการตอบรับเข้าร่วมประชุม / อบรม</h2>
+        </div>
+        <div class="flex justify-between mb-8 text-sm">
+            <p><strong>รหัสอ้างอิง:</strong> <span id="print-ref"></span></p>
+            <p><strong>วันที่ทำรายการ:</strong> <span id="print-timestamp"></span></p>
+        </div>
+        <div class="mb-8">
+            <h3 class="font-bold text-lg border-b pb-2 mb-3">รายละเอียดการประชุม</h3>
+            <div class="pl-4 space-y-2">
+                <p><strong>เรื่อง:</strong> <span id="print-mtg-topic"></span></p>
+                <p><strong>วัน-เวลา:</strong> <span id="print-mtg-datetime"></span></p>
+                <p><strong>สถานที่:</strong> <span id="print-mtg-location"></span></p>
+            <p id="print-mtg-online-row"><strong>ลิงก์ออนไลน์:</strong> <span id="print-mtg-online-link"></span></p>
+            </div>
+        </div>
+        <div class="mb-8">
+            <h3 class="font-bold text-lg border-b pb-2 mb-3">ข้อมูลผู้ตอบรับ</h3>
+            <div class="pl-4 space-y-2">
+                <p><strong>ชื่อ-นามสกุล:</strong> <span id="print-user-name"></span></p>
+                <p><strong>สถานะการเข้าร่วม:</strong> <span id="print-status" class="font-bold text-lg"></span></p>
+                <p id="print-attendance-mode-row"><strong>รูปแบบการเข้าร่วม:</strong> <span id="print-attendance-mode"></span></p>
+                <p id="print-reason-container"><strong>เหตุผล:</strong> <span id="print-reason"></span></p>
+            </div>
+        </div>
+        <div class="mt-16 text-center text-sm text-gray-500">
+            <p>เอกสารฉบับนี้สร้างโดยระบบอัตโนมัติ สถาบันการแพทย์ฉุกเฉินแห่งชาติ</p>
+        </div>
+    </div>
+
+    <!-- Footer Developer Credit -->
+    <footer class="mt-auto py-6 text-center no-print">
+        <p class="text-xs font-heading font-medium text-apple-muted tracking-wide">
+            Develop by Supanan V. (Engineer/Paramedic) | ACEMP NIEM
+        </p>
+    </footer>
+
+    <!-- ================= JAVASCRIPT ================= -->
+    <script>
+        // --- State Local DB ---
+        let db = { meetings: [], attendees: {}, responses: [] };
+        let currentUploadTarget = { mtgId: null, name: null };
+        let currentAgendaTargetMeetingId = null;
+        let currentEditableResponseId = null;
+        let isEditingExistingResponse = false;
+        let TARGET_PIN_HASH = "";
+        let PIN_HASH_READY = false;
+        let currentAdminRole = sessionStorage.getItem('adminRole') || 'admin';
+
+        // --- Hashing ---
+        async function getSHA256Hash(text) {
+            const msgUint8 = new TextEncoder().encode(text);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+        // ตั้งค่า Hash สำหรับ PIN: 140433
+        getSHA256Hash("140433").then(hash => { TARGET_PIN_HASH = hash; PIN_HASH_READY = true; });
+
+        // --- Init App (Production: เชื่อมต่อกับ Google Apps Script) ---
+        window.onload = () => {
+            const roleSelect = document.getElementById('admin-role');
+            if (roleSelect) roleSelect.value = currentAdminRole;
+            updateAdminRoleBadge();
+
+            google.script.run
+                .withSuccessHandler(function(serverData) {
+                    db = serverData;
+                    document.getElementById('global-loader').style.opacity = '0';
+                    setTimeout(() => {
+                        document.getElementById('global-loader').classList.add('hidden');
+                        document.getElementById('view-role-selection').classList.remove('hidden');
+                        renderAdminMeetingsList();
+                        populateMeetingDropdowns();
+                    }, 300);
+                })
+                .withFailureHandler(function(err) {
+                    Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้', 'error');
+                })
+                .getInitialData();
+        };
+
+        function handleAdminRoleChange() {
+            const roleSelect = document.getElementById('admin-role');
+            if (!roleSelect) return;
+            currentAdminRole = roleSelect.value || 'admin';
+            sessionStorage.setItem('adminRole', currentAdminRole);
+            updateAdminRoleBadge();
+        }
+
+        function updateAdminRoleBadge() {
+            const roleBadge = document.getElementById('admin-role-badge');
+            if (roleBadge) roleBadge.innerText = String(currentAdminRole || 'admin').toUpperCase();
+        }
+
+        // --- ระบบตรวจสอบ Admin PIN ---
+        async function verifyAdminAccess() {
+            if (sessionStorage.getItem('isAdminAuthed') === 'true') { showView('admin-dashboard'); return; }
+            if (!PIN_HASH_READY) {
+                await Swal.fire({ icon: 'warning', title: 'กำลังโหลด', text: 'ระบบกำลังเตรียมพร้อม กรุณารอสักครู่แล้วลองใหม่', confirmButtonColor: '#1D1D1F', customClass: { popup: 'rounded-3xl font-heading' } });
+                return;
+            }
+
+            const { value: enteredPin } = await Swal.fire({
+                title: '<i class="fa-solid fa-lock mb-2 text-2xl text-apple-text"></i><br>Admin Access',
+                text: 'กรุณากรอกรหัส PIN 6 หลัก',
+                input: 'password',
+                inputAttributes: {
+                    inputmode: 'numeric', pattern: '[0-9]*', maxlength: '6',
+                    style: 'text-align: center; letter-spacing: 0.5em; font-size: 1.5rem; border-radius: 12px; background-color: #F2F2F7; border: none; outline: none; padding: 15px;'
+                },
+                showCancelButton: true, confirmButtonColor: '#EDFF21', cancelButtonColor: '#E5E5EA',
+                confirmButtonText: '<span class="text-ems-dark font-semibold">ยืนยัน</span>',
+                cancelButtonText: '<span class="text-apple-text">ยกเลิก</span>',
+                customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-8', cancelButton: 'rounded-full px-8' }
+            });
+
+            if (enteredPin) {
+                const enteredHash = await getSHA256Hash(enteredPin);
+                if (enteredHash === TARGET_PIN_HASH) {
+                    const roleResult = await Swal.fire({
+                        title: 'เลือกบทบาทผู้ดูแล',
+                        input: 'select',
+                        inputOptions: {
+                            admin: 'admin',
+                            secretary: 'secretary',
+                            coordinator: 'coordinator'
+                        },
+                        inputValue: currentAdminRole || 'admin',
+                        inputPlaceholder: 'เลือก role สำหรับ session นี้',
+                        confirmButtonColor: '#1D1D1F',
+                        customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white' }
+                    });
+                    if (!roleResult.value) return;
+
+                    sessionStorage.setItem('isAdminAuthed', 'true');
+                    currentAdminRole = roleResult.value;
+                    sessionStorage.setItem('adminRole', currentAdminRole);
+                    const roleSelect = document.getElementById('admin-role');
+                    if (roleSelect) roleSelect.value = currentAdminRole;
+                    updateAdminRoleBadge();
+                    Swal.fire({
+                        toast: true, position: 'top', icon: 'success', title: 'ปลดล็อกระบบสำเร็จ',
+                        showConfirmButton: false, timer: 1500, timerProgressBar: true,
+                        customClass: { popup: 'rounded-2xl font-heading shadow-apple mt-4' }
+                    });
+                    showView('admin-dashboard');
+                } else {
+                    Swal.fire({ icon: 'error', title: 'รหัสไม่ถูกต้อง', text: 'PIN ที่ระบุไม่ตรงกับฐานข้อมูล', confirmButtonColor: '#1D1D1F', customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white' } });
+                }
+            }
+        }
+
+        function adminLogout() {
+            sessionStorage.removeItem('isAdminAuthed');
+            sessionStorage.removeItem('adminRole');
+            currentAdminRole = 'admin';
+            const roleSelect = document.getElementById('admin-role');
+            if (roleSelect) roleSelect.value = currentAdminRole;
+            updateAdminRoleBadge();
+            showView('role-selection');
+            Swal.fire({ toast: true, position: 'top', icon: 'info', title: 'ออกจากระบบผู้ดูแล', showConfirmButton: false, timer: 1500, customClass: { popup: 'rounded-2xl font-heading shadow-apple mt-4' } });
+        }
+
+        // --- UI Navigation ---
+        function showView(viewId) {
+            document.querySelectorAll('.app-view').forEach(el => el.classList.add('hidden'));
+            document.getElementById('view-' + viewId).classList.remove('hidden');
+            if(viewId === 'admin-dashboard') { updateAdminRoleBadge(); renderAdminMeetingsList(); switchAdminTab('meetings'); }
+            if(viewId === 'user-dashboard') {
+                populateMeetingDropdowns(); document.getElementById('user-response-form').classList.add('hidden');
+                document.getElementById('user-select-meeting').value = ""; document.getElementById('invitation-download-section').classList.add('hidden');
+                document.getElementById('agenda-download-section').classList.add('hidden');
+                document.getElementById('attendance-mode-container').classList.add('hidden');
+                document.querySelectorAll('input[name="attendance"]').forEach(r => r.checked = false); document.getElementById('reason-container').classList.add('hidden');
+            }
+            window.scrollTo(0,0);
+        }
+
+        function switchAdminTab(tab) {
+            document.querySelectorAll('.admin-tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.segmented-control button').forEach(el => el.classList.remove('active'));
+            document.getElementById('admin-tab-' + tab).classList.remove('hidden'); document.getElementById('tab-' + tab).classList.add('active');
+            if(tab === 'attendees') populateMeetingDropdowns();
+            if(tab === 'history') { populateMeetingDropdowns(); renderHistory(); }
+        }
+
+        // ================= ADMIN: MEETINGS (SYNC SERVER) =================
+        function handleSaveMeeting(e) {
+            e.preventDefault();
+            const id = document.getElementById('mtg-id').value;
+            const meeting = {
+                id: id ? id : "M" + Date.now().toString().slice(-9),
+                topic: document.getElementById('mtg-topic').value,
+                date: document.getElementById('mtg-date').value,
+                time: document.getElementById('mtg-time').value,
+                location: document.getElementById('mtg-location').value,
+                onlineLink: document.getElementById('mtg-online-link').value,
+                agendaUrl: '',
+                agendaName: '',
+                agendaFileId: '',
+                hybridEnabled: document.getElementById('mtg-hybrid-enabled').checked,
+                uploadRoles: (document.getElementById('mtg-upload-roles').value || 'admin').trim(),
+                isActive: true
+            };
+
+            if (id) {
+                const oldMeeting = db.meetings.find(m => m.id === id);
+                if (oldMeeting) {
+                    meeting.agendaUrl = oldMeeting.agendaUrl || '';
+                    meeting.agendaName = oldMeeting.agendaName || '';
+                    meeting.agendaFileId = oldMeeting.agendaFileId || '';
+                    meeting.isActive = oldMeeting.isActive !== false;
+                }
+            }
+
+            // อัปเดต Local DB ก่อน (Optimistic UI)
+            if (id) {
+                const index = db.meetings.findIndex(m => m.id === id);
+                if (index > -1) db.meetings[index] = meeting;
+            } else {
+                db.meetings.push(meeting); db.attendees[meeting.id] = [];
+            }
+            
+            // ส่งไป Server
+            if(typeof google !== 'undefined') google.script.run
+                .withFailureHandler(function(err) { showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้'); })
+                .saveMeetingToServer(meeting);
+
+            showAlert('success', 'บันทึกสำเร็จ', 'อัปเดตข้อมูลการประชุมแล้ว');
+            resetMeetingForm(); renderAdminMeetingsList(); populateMeetingDropdowns();
+        }
+
+        function editMeeting(id) {
+            const meeting = db.meetings.find(m => m.id === id); if (!meeting) return;
+            document.getElementById('mtg-id').value = meeting.id; document.getElementById('mtg-topic').value = meeting.topic;
+            document.getElementById('mtg-date').value = meeting.date; document.getElementById('mtg-time').value = meeting.time;
+            document.getElementById('mtg-location').value = meeting.location || '';
+            document.getElementById('mtg-online-link').value = meeting.onlineLink || '';
+            document.getElementById('mtg-hybrid-enabled').checked = !!meeting.hybridEnabled;
+            document.getElementById('mtg-upload-roles').value = meeting.uploadRoles || 'admin';
+            document.getElementById('meeting-form-title').innerHTML = '<i class="fa-solid fa-pen-to-square text-apple-muted"></i> แก้ไขการประชุม';
+            window.scrollTo({top: 0, behavior: 'smooth'});
+        }
+
+        function resetMeetingForm() {
+            document.getElementById('form-meeting').reset(); document.getElementById('mtg-id').value = "";
+            document.getElementById('mtg-location').value = "";
+            document.getElementById('mtg-online-link').value = "";
+            document.getElementById('mtg-upload-roles').value = 'admin';
+            document.getElementById('mtg-hybrid-enabled').checked = false;
+            document.getElementById('meeting-form-title').innerHTML = '<i class="fa-solid fa-calendar-plus text-apple-muted"></i> เพิ่มการประชุมใหม่';
+        }
+
+        function deleteMeeting(id) {
+            Swal.fire({
+                title: 'ยืนยันการลบ', text: "ข้อมูลและรายชื่อจะถูกลบถาวร", icon: 'warning',
+                showCancelButton: true, confirmButtonColor: '#FF3B30', cancelButtonColor: '#86868B',
+                confirmButtonText: 'ลบข้อมูล', cancelButtonText: 'ยกเลิก',
+                customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6', cancelButton: 'rounded-full px-6' }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    db.meetings = db.meetings.filter(m => m.id !== id); delete db.attendees[id];
+                    // ส่งไปลบบน Server
+                    if(typeof google !== 'undefined') google.script.run
+                        .withFailureHandler(function(err) { showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถลบข้อมูลได้'); })
+                        .deleteMeetingFromServer(id);
+                    renderAdminMeetingsList(); populateMeetingDropdowns();
+                }
+            });
+        }
+
+        function renderAdminMeetingsList() {
+            const tbody = document.getElementById('admin-meetings-list'); tbody.innerHTML = '';
+            if (db.meetings.length === 0) { tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-apple-muted">ไม่มีข้อมูลการประชุม</td></tr>`; return; }
+            const statusFilter = document.getElementById('meeting-status-filter') ? document.getElementById('meeting-status-filter').value : 'all';
+            let sortedMtg = [...db.meetings].sort((a,b) => new Date(b.date) - new Date(a.date));
+            if (statusFilter === 'active') sortedMtg = sortedMtg.filter(m => m.isActive !== false);
+            if (statusFilter === 'inactive') sortedMtg = sortedMtg.filter(m => m.isActive === false);
+
+            if (sortedMtg.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-apple-muted">ไม่พบรายการประชุมตามตัวกรองที่เลือก</td></tr>`;
+                return;
+            }
+
+            sortedMtg.forEach(m => {
+                const isActive = m.isActive !== false;
+                const agendaCell = m.agendaUrl
+                    ? `<div class="flex items-center gap-2"><a href="${m.agendaUrl}" target="_blank" class="text-xs text-blue-600 underline truncate max-w-[120px]" title="${m.agendaName || 'วาระการประชุม'}">${m.agendaName || 'ดาวน์โหลด'}</a><button onclick="triggerAgendaUpload('${m.id}')" class="text-xs bg-apple-gray px-2 py-1 rounded-full border border-apple-border hover:bg-ems-yellow transition-colors"><i class="fa-solid fa-rotate"></i></button></div>`
+                    : `<button onclick="triggerAgendaUpload('${m.id}')" class="text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-upload mr-1"></i> อัปโหลด</button>`;
+                const activeBadge = isActive
+                    ? `<button onclick="toggleMeetingActive('${m.id}', false)" title="คลิกเพื่อปิดการรับตอบสำหรับการประชุมนี้" class="inline-flex items-center gap-1 text-xs font-semibold bg-green-100 text-green-800 px-3 py-1.5 rounded-full border border-green-300 hover:bg-green-200 transition-colors"><span class="w-2 h-2 rounded-full bg-green-600"></span>Active</button>`
+                    : `<button onclick="toggleMeetingActive('${m.id}', true)" title="คลิกเพื่อเปิดการรับตอบสำหรับการประชุมนี้อีกครั้ง" class="inline-flex items-center gap-1 text-xs font-semibold bg-red-100 text-red-700 px-3 py-1.5 rounded-full border border-red-300 hover:bg-red-200 transition-colors"><span class="w-2 h-2 rounded-full bg-red-500"></span>Inactive</button>`;
+                const row = `
+                    <tr class="group hover:bg-apple-gray transition-colors ${isActive ? '' : 'opacity-70'}">
+                        <td class="py-4 px-2 align-top"><p class="font-medium text-apple-text">${m.topic}</p>${m.hybridEnabled ? '<span class="inline-block mt-1 text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Hybrid</span>' : ''}</td>
+                        <td class="py-4 px-2 align-top text-sm"><p>${formatDateThai(m.date)}</p><p class="text-apple-muted">${m.time} น.</p></td>
+                        <td class="py-4 px-2 align-top text-sm text-apple-muted max-w-[150px] truncate" title="${m.location}">${m.location}</td>
+                        <td class="py-4 px-2 align-top text-sm">${activeBadge}</td>
+                        <td class="py-4 px-2 align-top text-sm">${agendaCell}</td>
+                        <td class="py-4 px-2 align-top text-right whitespace-nowrap">
+                            <button onclick="editMeeting('${m.id}')" class="w-8 h-8 rounded-full bg-white border border-apple-border text-apple-text hover:bg-apple-gray transition-colors mx-1"><i class="fa-solid fa-pen text-xs"></i></button>
+                            <button onclick="deleteMeeting('${m.id}')" class="w-8 h-8 rounded-full bg-white border border-apple-border text-ems-red hover:bg-red-50 transition-colors"><i class="fa-solid fa-trash text-xs"></i></button>
+                        </td>
+                    </tr>`;
+                tbody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+        function toggleMeetingActive(mtgId, nextState) {
+            const meetingIndex = db.meetings.findIndex(m => m.id === mtgId);
+            if (meetingIndex < 0) return;
+
+            db.meetings[meetingIndex].isActive = !!nextState;
+            renderAdminMeetingsList();
+            populateMeetingDropdowns();
+
+            if (typeof google !== 'undefined') {
+                google.script.run
+                    .withFailureHandler(function() {
+                        db.meetings[meetingIndex].isActive = !nextState;
+                        renderAdminMeetingsList();
+                        populateMeetingDropdowns();
+                        showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถอัปเดตสถานะ Active/Inactive ได้');
+                    })
+                    .setMeetingActiveStatus(mtgId, !!nextState);
+            }
+        }
+
+        function getMeetingById(mtgId) {
+            return db.meetings.find(m => m.id === mtgId);
+        }
+
+        function getAllowedUploadRolesForMeeting(mtgId) {
+            const meeting = getMeetingById(mtgId);
+            return meeting && meeting.uploadRoles ? meeting.uploadRoles : 'admin';
+        }
+
+        function canCurrentRoleUpload(mtgId) {
+            const roles = String(getAllowedUploadRolesForMeeting(mtgId) || '')
+                .split(',')
+                .map(r => r.trim().toLowerCase())
+                .filter(Boolean);
+            return currentAdminRole === 'admin' || roles.includes(String(currentAdminRole || '').toLowerCase());
+        }
+
+        function triggerAgendaUpload(mtgId) {
+            if (!canCurrentRoleUpload(mtgId)) {
+                showAlert('error', 'ไม่มีสิทธิ์', `Role ${currentAdminRole} ไม่ได้รับสิทธิ์อัปโหลดไฟล์ของการประชุมนี้`);
+                return;
+            }
+            currentAgendaTargetMeetingId = mtgId;
+            document.getElementById('agenda-file-input').click();
+        }
+
+        function handleAgendaUpload(e) {
+            const file = e.target.files[0];
+            if (!file || !currentAgendaTargetMeetingId) return;
+            const mtgId = currentAgendaTargetMeetingId;
+            const mtgIndex = db.meetings.findIndex(m => m.id === mtgId);
+            if (mtgIndex < 0) return;
+
+            document.getElementById('global-loader').classList.remove('hidden');
+            document.getElementById('global-loader').style.opacity = '1';
+            document.querySelector('#global-loader h2').innerText = 'กำลังอัปโหลดวาระประชุม...';
+
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                const base64Data = ev.target.result.split(',')[1];
+                const meeting = db.meetings[mtgIndex];
+                const oldFileId = meeting.agendaFileId || '';
+                const allowedRoles = getAllowedUploadRolesForMeeting(mtgId);
+
+                if (typeof google !== 'undefined') {
+                    google.script.run
+                        .withSuccessHandler(function(result) {
+                            if (result.success) {
+                                db.meetings[mtgIndex].agendaUrl = result.url;
+                                db.meetings[mtgIndex].agendaName = result.name;
+                                db.meetings[mtgIndex].agendaFileId = result.fileId;
+
+                                google.script.run
+                                    .withSuccessHandler(function(saved) {
+                                        document.getElementById('global-loader').classList.add('hidden');
+                                        if (!saved) {
+                                            showAlert('warning', 'อัปเดตบางส่วน', 'อัปโหลดไฟล์สำเร็จ แต่ไม่พบรายการประชุมสำหรับบันทึกวาระ');
+                                            return;
+                                        }
+
+                                        // โหลดข้อมูลล่าสุดจาก server ป้องกันวาระหายจาก state ไม่ตรงกัน
+                                        google.script.run
+                                            .withSuccessHandler(function(serverData) {
+                                                db = serverData;
+                                                renderAdminMeetingsList();
+                                                populateMeetingDropdowns();
+                                                showAlert('success', 'อัปโหลดสำเร็จ', 'ระบบแนบไฟล์วาระการประชุมเรียบร้อยแล้ว');
+                                            })
+                                            .withFailureHandler(function() {
+                                                // ถ้ารีเฟรชไม่สำเร็จ ให้แสดงจาก local state ก่อน
+                                                renderAdminMeetingsList();
+                                                showAlert('success', 'อัปโหลดสำเร็จ', 'บันทึกวาระแล้ว แต่รีเฟรชข้อมูลล่าสุดไม่สำเร็จ');
+                                            })
+                                            .getInitialData();
+                                    })
+                                    .withFailureHandler(function() {
+                                        document.getElementById('global-loader').classList.add('hidden');
+                                        showAlert('warning', 'อัปเดตบางส่วน', 'อัปโหลดไฟล์สำเร็จ แต่บันทึกวาระลงฐานข้อมูลไม่สำเร็จ');
+                                    })
+                                    .saveMeetingAgendaToServer(mtgId, result.url, result.name, result.fileId);
+                            } else {
+                                document.getElementById('global-loader').classList.add('hidden');
+                                showAlert('error', 'อัปโหลดไม่สำเร็จ', result.error || 'ไม่สามารถอัปโหลดไฟล์ได้');
+                            }
+                        })
+                        .withFailureHandler(function() {
+                            document.getElementById('global-loader').classList.add('hidden');
+                            showAlert('error', 'เชื่อมต่อไม่สำเร็จ', 'ไม่สามารถเชื่อมต่อกับ Server ได้');
+                        })
+                        .uploadMeetingAgendaToDrive(base64Data, file.name, mtgId, oldFileId, currentAdminRole, allowedRoles);
+                } else {
+                    db.meetings[mtgIndex].agendaUrl = ev.target.result;
+                    db.meetings[mtgIndex].agendaName = file.name;
+                    renderAdminMeetingsList();
+                    document.getElementById('global-loader').classList.add('hidden');
+                }
+            };
+            reader.readAsDataURL(file);
+            document.getElementById('agenda-file-input').value = '';
+        }
+
+        // ================= ADMIN: ATTENDEES (SYNC SERVER) =================
+        function populateMeetingDropdowns() {
+            const adminSelect = document.getElementById('admin-select-meeting');
+            const userSelect = document.getElementById('user-select-meeting');
+            const historyFilter = document.getElementById('admin-history-filter');
+            
+            let options = `<option value="">-- กรุณาเลือกการประชุม --</option>`;
+            let filterOptions = `<option value="all">-- แสดงประวัติการตอบรับทั้งหมด --</option>`;
+            db.meetings.forEach(m => {
+                const optStr = `<option value="${m.id}">${m.topic} (${formatDateThai(m.date)})</option>`;
+                if (m.isActive !== false) options += optStr;
+                filterOptions += optStr;
+            });
+            
+            const oldAdmin = adminSelect.value; const oldUser = userSelect.value; const oldHistory = historyFilter.value;
+            adminSelect.innerHTML = options; userSelect.innerHTML = options; historyFilter.innerHTML = filterOptions;
+            if(oldAdmin) adminSelect.value = oldAdmin; if(oldUser) userSelect.value = oldUser; if(oldHistory) historyFilter.value = oldHistory;
+        }
+
+        function syncAttendeesToServer(mtgId) {
+            if(typeof google !== 'undefined') google.script.run
+                .withFailureHandler(function(err) { showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถซิงค์ข้อมูลรายชื่อได้'); })
+                .saveAttendeesToServer(mtgId, db.attendees[mtgId]);
+        }
+
+        function renderAttendees() {
+            const mtgId = document.getElementById('admin-select-meeting').value;
+            const container = document.getElementById('attendee-manager'); const list = document.getElementById('attendees-list'); const count = document.getElementById('attendee-count');
+            
+            if (!mtgId) { container.classList.add('hidden'); return; }
+            container.classList.remove('hidden');
+            const users = db.attendees[mtgId] || []; count.innerText = users.length; list.innerHTML = '';
+            
+            if(users.length === 0) { list.innerHTML = `<li class="py-8 text-center text-apple-muted">ยังไม่มีรายชื่อในระบบ</li>`; return; }
+
+            users.forEach((user, idx) => {
+                let fileUI = user.pdfUrl 
+                    ? `<div class="flex items-center gap-2">
+                        <span class="text-xs font-medium text-ems-green bg-green-50 px-2.5 py-1 rounded-md border border-green-200 truncate max-w-[100px] sm:max-w-[150px]"><i class="fa-solid fa-file-pdf mr-1"></i> มีไฟล์แนบ</span>
+                        <button onclick="removeIndividualPDF('${mtgId}', '${user.name}')" class="text-ems-red hover:bg-red-50 p-1.5 rounded-full transition-colors" title="ลบไฟล์"><i class="fa-solid fa-xmark"></i></button>
+                       </div>`
+                    : `<button onclick="triggerIndividualUpload('${mtgId}', '${user.name}')" class="text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-paperclip mr-1"></i> แนบไฟล์</button>`;
+
+                list.innerHTML += `
+                    <li class="py-3 px-2 flex flex-col sm:flex-row justify-between items-start sm:items-center hover:bg-apple-gray/50 transition-colors gap-3">
+                        <div class="flex items-center gap-3"><span class="text-apple-muted w-5 text-right text-sm">${idx + 1}.</span><span class="font-medium">${user.name}</span></div>
+                        <div class="flex items-center gap-3 ml-8 sm:ml-0">
+                            ${fileUI}
+                            <div class="w-px h-4 bg-apple-border hidden sm:block"></div>
+                            <button onclick="editAttendeeName('${mtgId}', '${user.name.replace(/'/g, "\\'")}')" class="text-apple-muted hover:text-ems-yellow p-1.5 rounded-full hover:bg-yellow-50 transition-colors" title="แก้ไขชื่อ"><i class="fa-solid fa-pen"></i></button>
+                            <button onclick="removeAttendee('${mtgId}', '${user.name.replace(/'/g, "\\'")}')" class="text-apple-muted hover:text-ems-red p-1.5 rounded-full hover:bg-red-50 transition-colors" title="ลบรายชื่อ"><i class="fa-solid fa-trash-can"></i></button>
+                        </div>
+                    </li>`;
+            });
+        }
+
+        function triggerIndividualUpload(mtgId, name) {
+            if (!canCurrentRoleUpload(mtgId)) {
+                showAlert('error', 'ไม่มีสิทธิ์', `Role ${currentAdminRole} ไม่ได้รับสิทธิ์อัปโหลดไฟล์ของการประชุมนี้`);
+                return;
+            }
+            currentUploadTarget = { mtgId, name };
+            document.getElementById('temp-file-input').click();
+        }
+
+        function handleIndividualUpload(e) {
+            const file = e.target.files[0]; if (!file) return;
+            const { mtgId, name } = currentUploadTarget;
+            const users = db.attendees[mtgId];
+            const userIndex = users.findIndex(u => u.name.trim() === name.trim());
+            
+            if (userIndex > -1) {
+                document.getElementById('pdf-upload-loading').classList.remove('hidden');
+                
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const base64Data = e.target.result.split(',')[1];
+                    
+                    if(typeof google !== 'undefined') {
+                        // โยนให้ฝั่ง Server รับผิดชอบไปสร้างไฟล์ใน Drive พร้อมส่ง oldFileId เพื่อลบไฟล์เก่า
+                        const oldFileId = db.attendees[mtgId][userIndex].fileId || "";
+                        const allowedRoles = getAllowedUploadRolesForMeeting(mtgId);
+                        google.script.run
+                            .withSuccessHandler(function(result) {
+                                document.getElementById('pdf-upload-loading').classList.add('hidden');
+                                if(result.success) {
+                                    db.attendees[mtgId][userIndex].pdfUrl = result.url;
+                                    db.attendees[mtgId][userIndex].pdfName = result.name;
+                                    db.attendees[mtgId][userIndex].fileId = result.fileId;  // เก็บ File ID
+                                    syncAttendeesToServer(mtgId); // อัปเดตตาราง Attendees
+                                    renderAttendees();
+                                } else {
+                                    showAlert('error', 'ข้อผิดพลาด', 'อัปโหลดลง Drive ไม่สำเร็จ: ' + (result.error || "Unknown error"));
+                                }
+                            })
+                            .withFailureHandler(function(err) {
+                                document.getElementById('pdf-upload-loading').classList.add('hidden');
+                                showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อกับ Server ได้');
+                            })
+                            .uploadPdfToDrive(base64Data, file.name, mtgId, name, oldFileId, currentAdminRole, allowedRoles);
+                    } else {
+                        // Mock Preview Mode
+                        setTimeout(() => {
+                            db.attendees[mtgId][userIndex].pdfUrl = e.target.result;
+                            db.attendees[mtgId][userIndex].pdfName = file.name;
+                            document.getElementById('pdf-upload-loading').classList.add('hidden');
+                            renderAttendees();
+                        }, 800);
+                    }
+                };
+                reader.readAsDataURL(file);
+                document.getElementById('temp-file-input').value = ''; 
+            }
+        }
+
+        function removeIndividualPDF(mtgId, name) {
+            const user = db.attendees[mtgId].find(u => u.name.trim() === name.trim());
+            if (user) { user.pdfUrl = ""; user.pdfName = ""; user.fileId = ""; renderAttendees(); syncAttendeesToServer(mtgId); }
+        }
+
+        function addAttendee() {
+            const mtgId = document.getElementById('admin-select-meeting').value;
+            const input = document.getElementById('new-attendee-name'); const name = input.value.trim();
+            if(!name) return; if(!db.attendees[mtgId]) db.attendees[mtgId] = [];
+            if(db.attendees[mtgId].some(u => u.name.trim() === name.trim())) { showAlert('warning', 'ชื่อซ้ำ', 'มีรายชื่อนี้ในระบบแล้ว'); return; }
+            db.attendees[mtgId].push({ name: name, pdfUrl: "", pdfName: "", fileId: "" });
+            input.value = ''; renderAttendees(); syncAttendeesToServer(mtgId);
+        }
+
+        function importCSV() {
+            const mtgId = document.getElementById('admin-select-meeting').value;
+            const fileInput = document.getElementById('csv-file'); const file = fileInput.files[0];
+            if(!mtgId || !file) { showAlert('warning', 'แจ้งเตือน', 'กรุณาเลือกการประชุมและไฟล์'); return; }
+
+            function countThaiChars(text) {
+                const matches = (text || "").match(/[\u0E00-\u0E7F]/g);
+                return matches ? matches.length : 0;
+            }
+
+            // แยกบรรทัด CSV โดยคำนึงถึงเครื่องหมายคำพูด (Quote Aware Split)
+            function splitCSV(line, delimiter) {
+                if (!line) return [];
+                const res = [];
+                let current = '';
+                let inQuotes = false;
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    if (char === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (char === delimiter && !inQuotes) {
+                        res.push(current.trim().replace(/^["']|["']$/g, ''));
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                res.push(current.trim().replace(/^["']|["']$/g, ''));
+                return res;
+            }
+
+            function tryDecodeFile(encoding) {
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        try {
+                            const buffer = e.target.result;
+                            const decoder = new TextDecoder(encoding, { fatal: false });
+                            let text = decoder.decode(buffer);
+                            if (text.charCodeAt(0) === 0xFEFF) text = text.substring(1);
+                            resolve(text);
+                        } catch (err) { resolve(''); }
+                    };
+                    reader.onerror = () => resolve('');
+                    reader.readAsArrayBuffer(file);
+                });
+            }
+
+            async function processFile() {
+                // รายการ Encoding ที่จะลองลำดับแรกๆ
+                const encodings = ['utf-8', 'windows-874', 'tis-620', 'utf-16le', 'utf-16be'];
+                let bestText = '';
+                let usedEncoding = 'unknown';
+
+                // อ่านไฟล์เป็น ArrayBuffer
+                const buffer = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.readAsArrayBuffer(file);
+                });
+
+                const view = new Uint8Array(buffer);
+
+                // 1. ตรวจสอบ BOM (Byte Order Mark) และประกาศตัวแปรเบื้องต้น
+                if (view[0] === 0xEF && view[1] === 0xBB && view[2] === 0xBF) {
+                    bestText = new TextDecoder('utf-8').decode(buffer).substring(1);
+                    usedEncoding = 'utf-8 (BOM)';
+                } else if (view[0] === 0xFF && view[1] === 0xFE) {
+                    bestText = new TextDecoder('utf-16le').decode(buffer).substring(1);
+                    usedEncoding = 'utf-16le (BOM)';
+                } else if (view[0] === 0xFE && view[1] === 0xFF) {
+                    bestText = new TextDecoder('utf-16be').decode(buffer).substring(1);
+                    usedEncoding = 'utf-16be (BOM)';
+                }
+
+                // 2. ถ้ายังไม่ได้ข้อความจากการเช็ค BOM
+                if (!bestText) {
+                    try {
+                        // ลอง UTF-8 (Strict) ก่อน
+                        const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+                        const utf8Text = utf8Decoder.decode(buffer);
+                        // ถ้า decode ผ่าน และมีอักษรไทย ให้ใช้ทันที ห้ามไปลองอันอื่น
+                        if (countThaiChars(utf8Text) > 0) {
+                            bestText = utf8Text;
+                            usedEncoding = 'utf-8 (strict)';
+                        }
+                    } catch (e) { /* ไม่ใช่ UTF-8 */ }
+                }
+
+                // 3. ถ้ายังไม่ได้ (ไม่ใช่ UTF-8 หรือ UTF-8 ไม่มีไทย) ให้ลองถอดรหัสอื่นๆ
+                if (!bestText) {
+                    let maxThai = 0;
+                    for (const enc of encodings) {
+                        try {
+                            const decoder = new TextDecoder(enc, { fatal: true });
+                            const decoded = decoder.decode(buffer);
+                            const thaiCount = countThaiChars(decoded);
+                            
+                            // ถ้าพบภาษาไทยใน encoding นี้
+                            if (thaiCount > maxThai) {
+                                maxThai = thaiCount;
+                                bestText = decoded;
+                                usedEncoding = enc;
+                            }
+                        } catch (e) { /* ข้ามตัวที่ decode ไม่ผ่าน */ }
+                    }
+                }
+
+                // กรณีสุดท้าย (Fallback)
+                if (!bestText) {
+                    bestText = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
+                    usedEncoding = 'utf-8 (fallback)';
+                }
+
+                // ล้าง "๏ปฟ" ที่อาจหลุดรอดมา (BOM ที่ถูก decode ผิดพลาด)
+                bestText = bestText.replace(/^๏ปฟ/, '').replace(/^\uFEFF/, '');
+
+                const rawLines = bestText.split(/\r?\n/).filter(l => l.trim());
+                if (rawLines.length === 0) { showAlert('error', 'ไฟล์ว่าง', 'ไม่พบข้อมูลในไฟล์ที่เลือก'); return; }
+
+                const sampleLines = rawLines.slice(0, 5);
+                const delimiters = [',', ';', '\t'];
+                let bestDelimiter = ',';
+                let maxAvgCols = 0;
+
+                delimiters.forEach(d => {
+                    const counts = sampleLines.map(l => l.split(d).length);
+                    const avg = counts.reduce((a, b) => a + b, 0) / counts.length;
+                    if (avg > maxAvgCols) { maxAvgCols = avg; bestDelimiter = d; }
+                });
+
+                let added = 0, dup = 0, skipped = 0;
+                let sampleAdded = [];
+                if(!db.attendees[mtgId]) db.attendees[mtgId] = [];
+
+                rawLines.forEach((line) => {
+                    const columns = splitCSV(line, bestDelimiter);
+                    let name = '';
+                    const thaiPrefixes = /^(นาย|นาง|นางสาว|น\.ส\.|ดร\.|พญ\.|นพ\.|น\.พ\.|ทพ\.|พล\.|พ\.ต\.|จ\.ส\.|ร\.ต\.|ส\.ต\.|ว่าที่|คุณ|ศ\.|ผศ\.|รศ\.)/i;
+                    
+                    for (const col of columns) {
+                        if (thaiPrefixes.test(col)) { name = col; break; }
+                    }
+
+                    if (!name) {
+                        let maxThai = 0;
+                        for (const col of columns) {
+                            const c = countThaiChars(col);
+                            if (c > maxThai) { maxThai = c; name = col; }
+                        }
+                    }
+
+                    if (!name) {
+                        name = columns.find(col => col.length > 1 && !/^\d+$/.test(col)) || '';
+                    }
+
+                    name = name.replace(/^\d+[\.\)\-]\s*/, '').replace(/^\s*-\s*/, '').trim();
+
+                    const headerPattern = /^(ชื่อ|name|รายชื่อ|ลำดับ|no\.?|#|list|ลำดับที่|เลขที่|item|\d+\s*\.)$/i;
+                    if(name.length <= 1 || headerPattern.test(name)) {
+                        skipped++; return;
+                    }
+
+                    const exists = db.attendees[mtgId].some(u => u.name.trim() === name.trim());
+                    if(!exists) {
+                        db.attendees[mtgId].push({ name: name, pdfUrl: "", pdfName: "", fileId: "" });
+                        added++;
+                        if (sampleAdded.length < 3) sampleAdded.push(name);
+                    } else {
+                        dup++;
+                    }
+                });
+
+                fileInput.value = ''; renderAttendees(); syncAttendeesToServer(mtgId);
+                
+                let sampleText = sampleAdded.length > 0 ? `<div class="mt-2 p-2 bg-gray-50 rounded-lg text-xs text-left"><p class="font-bold mb-1">ตัวอย่างรายชื่อ:</p> ${sampleAdded.join(', ')}${added > 3 ? '...' : ''}</div>` : '';
+                
+                if (added === 0 && countThaiChars(bestText) > 0) {
+                    showAlert('warning', 'ไม่มีรายชื่อถูกเพิ่ม', 'ไม่พบรายชื่อใหม่ในไฟล์ (อาจมีในระบบแล้ว)');
+                } else if (countThaiChars(bestText) === 0 && (bestText.match(/\?/g) || []).length > (bestText.length * 0.05)) {
+                    showAlert('error', 'การถอดรหัสล้มเหลว', 'ตรวจพบอักขระที่ไม่ถูกต้อง กรุณาลองบันทึกไฟล์เป็น CSV UTF-8');
+                } else {
+                    Swal.fire({ 
+                        icon: 'success', 
+                        title: 'นำเข้าสำเร็จ', 
+                        html: `เพิ่มรายชื่อใหม่: <b>${added}</b> ราย<br>${sampleText}<p class="text-xs text-apple-muted mt-3">ระบบตรวจพบ: <b>${usedEncoding}</b><br>Delimiter: "${bestDelimiter}"</p><p class="text-[10px] text-ems-red mt-2">* หากมีภาษาต่างดาวติดมา ให้กด "ล้างทั้งหมด" แล้วอัปโหลดใหม่</p>`,
+                        customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'bg-ems-yellow text-ems-dark rounded-full px-8 py-2 font-bold shadow-sm' }
+                    });
+                }
+            }
+            processFile();
+        }
+
+        function removeAttendee(mtgId, name) { 
+            db.attendees[mtgId] = db.attendees[mtgId].filter(u => u.name.trim() !== name.trim()); 
+            renderAttendees(); 
+            syncAttendeesToServer(mtgId); 
+        }
+
+        async function editAttendeeName(mtgId, oldName) {
+            const { value: newName } = await Swal.fire({
+                title: 'แก้ไขชื่อผู้เข้าร่วม',
+                input: 'text',
+                inputValue: oldName,
+                showCancelButton: true,
+                confirmButtonColor: '#1D1D1F',
+                cancelButtonColor: '#E5E5EA',
+                confirmButtonText: 'บันทึก',
+                cancelButtonText: 'ยกเลิก',
+                inputValidator: (value) => {
+                    if (!value || !value.trim()) return 'กรุณาระบุชื่อ-นามสกุล';
+                    if (value.trim() !== oldName && (db.attendees[mtgId] || []).some(u => u.name.trim() === value.trim())) return 'ชื่อนี้มีในระบบแล้ว';
+                },
+                customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6', cancelButton: 'rounded-full px-6' }
+            });
+
+            if (newName && newName.trim() !== oldName) {
+                const userIndex = db.attendees[mtgId].findIndex(u => u.name === oldName);
+                if (userIndex > -1) {
+                    db.attendees[mtgId][userIndex].name = newName.trim();
+                    renderAttendees();
+                    syncAttendeesToServer(mtgId);
+                    showAlert('success', 'แก้ไขสำเร็จ', `เปลี่ยนชื่อเป็น ${newName.trim()} แล้ว`);
+                }
+            }
+        }
+
+        function clearAllAttendees() {
+            const mtgId = document.getElementById('admin-select-meeting').value;
+            if(!db.attendees[mtgId] || db.attendees[mtgId].length === 0) return;
+            Swal.fire({
+                title: 'ล้างข้อมูล?', text: "รายชื่อและไฟล์แนบจะถูกลบทั้งหมด", icon: 'warning',
+                showCancelButton: true, confirmButtonColor: '#FF3B30', cancelButtonColor: '#86868B', confirmButtonText: 'ลบทั้งหมด', cancelButtonText: 'ยกเลิก',
+                customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6', cancelButton: 'rounded-full px-6' }
+            }).then((result) => { if (result.isConfirmed) { db.attendees[mtgId] = []; renderAttendees(); syncAttendeesToServer(mtgId); } });
+        }
+
+        // ================= ADMIN: HISTORY =================
+        function renderHistory() {
+            const filterMtgId = document.getElementById('admin-history-filter').value;
+            const statusFilter = document.getElementById('admin-history-status-filter').value;
+            const sortMode = document.getElementById('admin-history-sort').value;
+            const tbody = document.getElementById('admin-history-list');
+            
+            let filteredResponses = db.responses;
+            if(filterMtgId && filterMtgId !== 'all') filteredResponses = db.responses.filter(r => r.meetingId === filterMtgId);
+
+            if (statusFilter !== 'all') {
+                filteredResponses = filteredResponses.filter(r => {
+                    if (statusFilter === 'attend' || statusFilter === 'not_attend') return r.status === statusFilter;
+                    return String(r.attendanceMode || '').toLowerCase() === statusFilter;
+                });
+            }
+
+            filteredResponses = [...filteredResponses];
+            if (sortMode === 'oldest') filteredResponses.sort((a,b) => parseDateStr(a.timestamp) - parseDateStr(b.timestamp));
+            else if (sortMode === 'name_asc') filteredResponses.sort((a,b) => String(a.name || '').localeCompare(String(b.name || ''), 'th'));
+            else if (sortMode === 'name_desc') filteredResponses.sort((a,b) => String(b.name || '').localeCompare(String(a.name || ''), 'th'));
+            else filteredResponses.sort((a,b) => parseDateStr(b.timestamp) - parseDateStr(a.timestamp));
+
+            document.getElementById('history-count').innerText = filteredResponses.length; tbody.innerHTML = '';
+
+            if (filteredResponses.length === 0) { tbody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-apple-muted">ยังไม่มีประวัติการตอบรับ</td></tr>`; return; }
+
+            filteredResponses.forEach(r => {
+                const modeLabel = r.attendanceMode ? ` (${String(r.attendanceMode).toLowerCase() === 'online' ? 'Online' : 'Onsite'})` : '';
+                const statusBadge = r.status === 'attend' ? `<span class="bg-green-100 text-ems-green px-2 py-1 rounded-md text-xs font-semibold"><i class="fa-solid fa-check mr-1"></i> เข้าร่วม${modeLabel}</span>` : `<span class="bg-red-100 text-ems-red px-2 py-1 rounded-md text-xs font-semibold" title="${r.reason}"><i class="fa-solid fa-xmark mr-1"></i> ไม่เข้าร่วม</span>`;
+                const row = `
+                    <tr class="hover:bg-apple-gray transition-colors">
+                        <td class="py-3 px-2 font-medium">${r.name}</td>
+                        <td class="py-3 px-2 text-apple-muted truncate max-w-[200px]" title="${r.topic}">${r.topic}</td>
+                        <td class="py-3 px-2">${statusBadge}</td>
+                        <td class="py-3 px-2 text-apple-muted text-xs">${r.timestamp}</td>
+                        <td class="py-3 px-2 text-right">
+                            <button onclick="printAdminResponse('${r.id}')" class="text-xs bg-white border border-apple-border hover:bg-apple-border text-apple-text px-3 py-1.5 rounded-full transition-colors whitespace-nowrap shadow-sm"><i class="fa-solid fa-print text-apple-muted mr-1"></i> PDF</button>
+                        </td>
+                    </tr>`;
+                tbody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+        function parseDateStr(str) {
+            if(!str) return 0;
+            const thaiMatch = String(str).match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/);
+            if (thaiMatch) {
+                const d = new Date(Number(thaiMatch[3]), Number(thaiMatch[2]) - 1, Number(thaiMatch[1]), Number(thaiMatch[4]), Number(thaiMatch[5]), Number(thaiMatch[6]));
+                return isNaN(d.getTime()) ? 0 : d;
+            }
+            const d = new Date(str);
+            return isNaN(d.getTime()) ? 0 : d;
+        }
+
+        function printAdminResponse(responseId) { const data = db.responses.find(r => r.id === responseId); if(data) executePrint(data, true); }
+
+        // ================= USER AREA (SYNC SERVER) =================
+        function handleUserMeetingSelect() {
+            const mtgId = document.getElementById('user-select-meeting').value;
+            const form = document.getElementById('user-response-form'); const nameSelect = document.getElementById('user-name'); const dlSection = document.getElementById('invitation-download-section');
+            const agendaSection = document.getElementById('agenda-download-section');
+            const agendaBtn = document.getElementById('download-agenda-btn');
+            const agendaName = document.getElementById('agenda-file-name');
+            dlSection.classList.add('hidden');
+            agendaSection.classList.add('hidden');
+            if (!mtgId) { form.classList.add('hidden'); return; }
+
+            const meeting = db.meetings.find(m => m.id === mtgId);
+            if(meeting) {
+                document.getElementById('u-mtg-topic').innerText = meeting.topic;
+                document.getElementById('u-mtg-date').innerText = formatDateThai(meeting.date);
+                document.getElementById('u-mtg-time').innerText = meeting.time;
+                document.getElementById('u-mtg-location').innerText = meeting.location || '-';
+                const onlineRow = document.getElementById('u-mtg-online-row');
+                const onlineLink = document.getElementById('u-mtg-online-link');
+                if (meeting.onlineLink) {
+                    onlineLink.href = meeting.onlineLink;
+                    onlineLink.innerText = 'เข้าร่วมออนไลน์';
+                    onlineRow.classList.remove('hidden');
+                } else {
+                    onlineRow.classList.add('hidden');
+                }
+
+                if (meeting.agendaUrl) {
+                    agendaBtn.href = meeting.agendaUrl;
+                    agendaName.innerText = meeting.agendaName || 'ไฟล์วาระการประชุม';
+                    agendaSection.classList.remove('hidden');
+                } else {
+                    agendaSection.classList.add('hidden');
+                }
+            }
+
+            const users = db.attendees[mtgId] || []; let nameOptions = `<option value="">-- แตะเพื่อค้นหาชื่อ --</option>`;
+            users.sort((a, b) => a.name.localeCompare(b.name, 'th')).forEach(u => { nameOptions += `<option value="${u.name}">${u.name}</option>`; });
+            nameSelect.innerHTML = nameOptions;
+
+            document.querySelectorAll('input[name="attendance"]').forEach(r => r.checked = false);
+            document.getElementById('reason-container').classList.add('hidden');
+            document.getElementById('user-reason').removeAttribute('required');
+            document.getElementById('attendance-section').classList.add('hidden');
+            document.getElementById('attendance-mode-container').classList.add('hidden');
+            document.getElementById('attendance-mode').value = '';
+            document.getElementById('response-locked-banner').classList.add('hidden');
+            document.getElementById('response-locked-summary').innerText = 'ระบบล็อกตัวเลือกไว้เพื่อป้องกันการบันทึกซ้ำ';
+            currentEditableResponseId = null;
+            isEditingExistingResponse = false;
+            setResponseFormLocked(false);
+            updateSubmitButtonState();
+            form.classList.remove('hidden');
+        }
+
+        function handleUserNameSelect() {
+            const mtgId = document.getElementById('user-select-meeting').value; const userName = document.getElementById('user-name').value;
+            const dlSection = document.getElementById('invitation-download-section'); const dlBtn = document.getElementById('download-invitation-btn');
+
+            if (mtgId && userName) {
+                const user = (db.attendees[mtgId] || []).find(u => u.name === userName);
+                if (user && user.pdfUrl) {
+                    dlBtn.href = user.pdfUrl;
+                    if(user.pdfUrl.startsWith('data:')) { dlBtn.setAttribute('download', user.pdfName || 'หนังสือเชิญ.pdf'); dlBtn.removeAttribute('target'); } 
+                    else { dlBtn.removeAttribute('download'); dlBtn.setAttribute('target', '_blank'); }
+                    dlSection.classList.remove('hidden');
+                } else { dlSection.classList.add('hidden'); }
+            } else { dlSection.classList.add('hidden'); }
+
+            document.getElementById('attendance-section').classList.toggle('hidden', !userName);
+            if (!userName) {
+                document.querySelectorAll('input[name="attendance"]').forEach(r => r.checked = false);
+                document.getElementById('attendance-mode-container').classList.add('hidden');
+            }
+            updateSubmitButtonState();
+
+            const existingResponse = getLatestResponseForUser(mtgId, userName);
+            applyExistingResponseToForm(existingResponse);
+        }
+
+        function getLatestResponseForUser(meetingId, userName) {
+            if (!meetingId || !userName) return null;
+            const matches = db.responses.filter(r => r.meetingId === meetingId && r.name === userName);
+            if (matches.length === 0) return null;
+            matches.sort((a, b) => parseDateStr(b.timestamp) - parseDateStr(a.timestamp));
+            return matches[0];
+        }
+
+        function setResponseFormLocked(locked) {
+            document.querySelectorAll('input[name="attendance"]').forEach(el => el.disabled = locked);
+            document.getElementById('attendance-mode').disabled = locked;
+            document.getElementById('user-reason').disabled = locked;
+            const submitBtn = document.getElementById('submit-response-btn');
+            submitBtn.disabled = false;
+            submitBtn.classList.toggle('opacity-50', locked);
+            submitBtn.classList.toggle('cursor-not-allowed', locked);
+            updateSubmitButtonState();
+        }
+
+        function applyExistingResponseToForm(existingResponse) {
+            const banner = document.getElementById('response-locked-banner');
+            const summary = document.getElementById('response-locked-summary');
+            const reasonInput = document.getElementById('user-reason');
+            const modeSelect = document.getElementById('attendance-mode');
+
+            document.querySelectorAll('input[name="attendance"]').forEach(r => r.checked = false);
+            reasonInput.value = '';
+            modeSelect.value = '';
+            document.getElementById('reason-container').classList.add('hidden');
+            document.getElementById('attendance-mode-container').classList.add('hidden');
+            currentEditableResponseId = null;
+            isEditingExistingResponse = false;
+
+            if (!existingResponse) {
+                banner.classList.add('hidden');
+                setResponseFormLocked(false);
+                updateSubmitButtonState();
+                return;
+            }
+
+            const attendanceRadio = document.querySelector(`input[name="attendance"][value="${existingResponse.status}"]`);
+            if (attendanceRadio) attendanceRadio.checked = true;
+
+            if (existingResponse.status === 'not_attend') {
+                document.getElementById('reason-container').classList.remove('hidden');
+                reasonInput.value = existingResponse.reason || '';
+            }
+
+            if (existingResponse.status === 'attend' && existingResponse.attendanceMode) {
+                document.getElementById('attendance-mode-container').classList.remove('hidden');
+                modeSelect.value = existingResponse.attendanceMode;
+            }
+
+            const modeLabel = existingResponse.attendanceMode
+                ? ` | รูปแบบ: ${existingResponse.attendanceMode.toLowerCase() === 'online' ? 'Online' : 'Onsite'}`
+                : '';
+            summary.innerText = `บันทึกล่าสุดเมื่อ ${existingResponse.timestamp} | สถานะ: ${existingResponse.status === 'attend' ? 'เข้าร่วม' : 'ไม่เข้าร่วม'}${modeLabel}`;
+            banner.classList.remove('hidden');
+            currentEditableResponseId = existingResponse.id;
+            setResponseFormLocked(true);
+            updateSubmitButtonState();
+        }
+
+        async function requestEditResponse() {
+            if (!currentEditableResponseId) return;
+            const result = await Swal.fire({
+                icon: 'question',
+                title: 'ยืนยันการแก้ไขแบบตอบรับ',
+                text: 'ต้องการปลดล็อกแบบฟอร์มเพื่อแก้ไขข้อมูลตอบรับใช่หรือไม่',
+                showCancelButton: true,
+                confirmButtonColor: '#1D1D1F',
+                cancelButtonColor: '#E5E5EA',
+                confirmButtonText: 'ต้องการแก้ไข',
+                cancelButtonText: 'ยกเลิก',
+                customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white', cancelButton: 'rounded-full px-6' }
+            });
+            if (!result.isConfirmed) return;
+
+            isEditingExistingResponse = true;
+            setResponseFormLocked(false);
+            document.getElementById('response-locked-summary').innerText = 'กำลังแก้ไขข้อมูลตอบรับเดิม เมื่อบันทึกแล้วระบบจะอัปเดตรายการเดิม';
+            updateSubmitButtonState();
+        }
+
+        function toggleReasonField() {
+            const selected = document.querySelector('input[name="attendance"]:checked');
+            if (!selected) return;
+            const status = selected.value; const reasonDiv = document.getElementById('reason-container'); const reasonInput = document.getElementById('user-reason');
+            const modeContainer = document.getElementById('attendance-mode-container');
+            const modeSelect = document.getElementById('attendance-mode');
+            const mtgId = document.getElementById('user-select-meeting').value;
+            const meeting = getMeetingById(mtgId);
+            if (status === 'not_attend') { reasonDiv.classList.remove('hidden'); reasonInput.setAttribute('required', 'required'); } 
+            else { reasonDiv.classList.add('hidden'); reasonInput.removeAttribute('required'); reasonInput.value = ''; }
+
+            if (status === 'attend' && meeting && meeting.hybridEnabled) {
+                modeContainer.classList.remove('hidden');
+            } else {
+                modeContainer.classList.add('hidden');
+                modeSelect.value = '';
+            }
+            updateSubmitButtonState();
+        }
+
+        function submitResponse(e) {
+            e.preventDefault();
+            const mtgId = document.getElementById('user-select-meeting').value; const name = document.getElementById('user-name').value;
+            if (currentEditableResponseId && !isEditingExistingResponse) {
+                showAlert('warning', 'ข้อมูลถูกล็อก', 'หากต้องการแก้ไขแบบตอบรับ กรุณากดปุ่ม "แก้ไขแบบตอบรับ" ก่อน');
+                return;
+            }
+            const selected = document.querySelector('input[name="attendance"]:checked');
+            const userName = document.getElementById('user-name').value;
+            if (!userName) {
+                showAlert('warning', 'กรุณาเลือกชื่อก่อน', 'โปรดเลือกชื่อของคุณก่อนตอบรับการเข้าร่วมประชุม');
+                return;
+            }
+            if (!selected) { showAlert('error', 'ข้อมูลไม่ครบ', 'กรุณาเลือกสถานะการเข้าร่วม'); return; }
+            const status = selected.value; const reason = document.getElementById('user-reason').value;
+            const meeting = getMeetingById(mtgId);
+            const attendanceMode = document.getElementById('attendance-mode').value;
+
+            if(!name) { showAlert('error', 'ข้อผิดพลาด', 'กรุณาเลือกชื่อของคุณ'); return; }
+            if(status === 'attend' && meeting && meeting.hybridEnabled && !attendanceMode) {
+                showAlert('error', 'ข้อมูลไม่ครบ', 'กรุณาเลือกรูปแบบการเข้าร่วม Onsite หรือ Online');
+                return;
+            }
+
+            const data = {
+                id: currentEditableResponseId || ("RSV" + Date.now().toString() + Math.random().toString(36).slice(2, 6)), meetingId: mtgId, topic: document.getElementById('u-mtg-topic').innerText,
+                date: document.getElementById('u-mtg-date').innerText, time: document.getElementById('u-mtg-time').innerText,
+                location: document.getElementById('u-mtg-location').innerText,
+                onlineLink: document.getElementById('u-mtg-online-link').href || '',
+                attendanceMode: status === 'attend' ? attendanceMode : '',
+                name, status, reason, timestamp: formatThaiTimestamp(new Date())
+            };
+
+            const existingIndex = db.responses.findIndex(r => r.id === data.id);
+            if (existingIndex > -1) db.responses[existingIndex] = data;
+            else db.responses.push(data);
+
+            if(typeof google !== 'undefined') google.script.run
+                .withFailureHandler(function(err) { console.error('Failed to save response:', err); })
+                .saveResponseToServer(data);
+
+            currentEditableResponseId = data.id;
+            isEditingExistingResponse = false;
+            showSuccessDialog(data);
+        }
+
+        function updateSubmitButtonState() {
+            const submitBtn = document.getElementById('submit-response-btn');
+            const userName = document.getElementById('user-name').value;
+            const locked = document.querySelector('input[name="attendance"]') && document.querySelector('input[name="attendance"]').disabled;
+
+            if (locked) {
+                submitBtn.className = 'w-full py-4 rounded-2xl bg-gray-300 text-gray-500 font-heading font-semibold text-lg transition-all opacity-50 cursor-not-allowed';
+                return;
+            }
+
+            if (!userName) {
+                submitBtn.className = 'w-full py-4 rounded-2xl bg-gray-300 text-gray-500 font-heading font-semibold text-lg transition-all';
+                return;
+            }
+
+            submitBtn.className = 'w-full py-4 rounded-2xl bg-apple-text text-white font-heading font-semibold text-lg shadow-apple hover:shadow-apple-hover hover:-translate-y-1 transition-all';
+        }
+
+        function showSuccessDialog(data) {
+            let stHtml = data.status === 'attend' ? '<span class="text-ems-green font-semibold">เข้าร่วม</span>' : '<span class="text-ems-red font-semibold">ไม่เข้าร่วม</span>';
+            const modeText = data.attendanceMode ? (data.attendanceMode.toLowerCase() === 'online' ? 'Online' : 'Onsite') : '';
+            const modeHtml = data.status === 'attend' && modeText
+                ? `<p class="text-sm text-apple-muted mt-1">รูปแบบ: <b>${modeText}</b></p>`
+                : '';
+
+            let summaryHtml = '';
+            if (data.status === 'attend' && modeText === 'Online') {
+                const meetingLink = data.onlineLink && data.onlineLink !== '#' ? data.onlineLink : '';
+                const meetingLinkHtml = meetingLink
+                    ? `<a href="${meetingLink}" target="_blank" class="text-blue-600 underline break-all">${meetingLink}</a>`
+                    : '<span class="text-apple-muted">-</span>';
+                summaryHtml = `
+                    <div class="mt-3 text-left bg-apple-gray/60 rounded-xl p-3 text-sm space-y-1">
+                        <p><b>หัวข้อ:</b> ${data.topic || '-'}</p>
+                        <p><b>วัน:</b> ${data.date || '-'}</p>
+                        <p><b>เวลา:</b> ${data.time || '-'} น.</p>
+                        <p><b>Meeting link:</b> ${meetingLinkHtml}</p>
+                    </div>`;
+            }
+
+            if (data.status === 'attend' && modeText === 'Onsite') {
+                summaryHtml = `
+                    <div class="mt-3 text-left bg-apple-gray/60 rounded-xl p-3 text-sm space-y-1">
+                        <p><b>หัวข้อ:</b> ${data.topic || '-'}</p>
+                        <p><b>วัน:</b> ${data.date || '-'}</p>
+                        <p><b>เวลา:</b> ${data.time || '-'} น.</p>
+                        <p><b>สถานที่:</b> ${data.location || '-'}</p>
+                    </div>`;
+            }
+
+            Swal.fire({
+                icon: 'success', title: 'บันทึกเรียบร้อย', html: `<p class="mb-2">ระบบได้รับข้อมูลของ <b>${data.name}</b> แล้ว</p><p>สถานะ: ${stHtml}</p>${modeHtml}${summaryHtml}`,
+                showCancelButton: true, confirmButtonColor: '#1D1D1F', cancelButtonColor: '#E5E5EA', confirmButtonText: '<i class="fa-solid fa-print mr-1"></i> พิมพ์ / Save PDF', cancelButtonText: '<span class="text-apple-text">กลับหน้าหลัก</span>', customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white', cancelButton: 'rounded-full px-6' }
+            }).then((result) => { if (result.isConfirmed) executePrint(data, false); else showView('role-selection'); });
+        }
+
+        function executePrint(data, fromAdmin = false) {
+            document.getElementById('print-ref').innerText = data.id; document.getElementById('print-timestamp').innerText = data.timestamp;
+            document.getElementById('print-mtg-topic').innerText = data.topic; document.getElementById('print-mtg-datetime').innerText = `${data.date} เวลา ${data.time} น.`;
+            document.getElementById('print-mtg-location').innerText = data.location || '-';
+            document.getElementById('print-mtg-online-link').innerText = data.onlineLink || '-';
+            document.getElementById('print-user-name').innerText = data.name;
+            const modeRow = document.getElementById('print-attendance-mode-row');
+            const modeVal = document.getElementById('print-attendance-mode');
+            
+            const stEl = document.getElementById('print-status');
+            if(data.status === 'attend') {
+                stEl.innerText = "ยินดีเข้าร่วม";
+                stEl.className = "text-ems-green font-bold text-lg";
+                document.getElementById('print-reason-container').style.display = 'none';
+                if (data.attendanceMode) {
+                    modeVal.innerText = data.attendanceMode.toLowerCase() === 'online' ? 'Online' : 'Onsite';
+                    modeRow.style.display = 'block';
+                } else {
+                    modeRow.style.display = 'none';
+                }
+            } 
+            else { stEl.innerText = "ไม่สามารถเข้าร่วมได้"; stEl.className = "text-ems-red font-bold text-lg"; document.getElementById('print-reason-container').style.display = 'block'; document.getElementById('print-reason').innerText = data.reason; }
+            if (data.status !== 'attend') modeRow.style.display = 'none';
+
+            document.getElementById('print-section').classList.remove('hidden'); window.print();
+            setTimeout(() => { 
+                document.getElementById('print-section').classList.add('hidden'); 
+                if(fromAdmin) { showView('admin-dashboard'); switchAdminTab('history'); } else { showView('role-selection'); }
+            }, 500);
+        }
+
+        // Utils
+        function formatDateThai(dateStr) {
+            if(!dateStr) return "";
+            const m = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return String(dateStr);
+            return `${d.getDate()} ${m[d.getMonth()]} ${d.getFullYear() + 543}`;
+        }
+
+        function formatThaiTimestamp(dateObj) {
+            const dt = dateObj || new Date();
+            const options = {
+                timeZone: 'Asia/Bangkok',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            };
+            const parts = new Intl.DateTimeFormat('en-GB', options).formatToParts(dt);
+            const map = {};
+            parts.forEach(p => { map[p.type] = p.value; });
+            return `${map.day}/${map.month}/${map.year} ${map.hour}:${map.minute}:${map.second}`;
+        }
+        function showAlert(icon, title, text) { Swal.fire({ icon, title, text, confirmButtonColor: '#1D1D1F', customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white' } }); }
+    </script>
+</body>
+</html>
