@@ -521,6 +521,7 @@
         if (gasUrlFromQuery) localStorage.setItem('gasApiUrl', gasUrlFromQuery);
 
         const APP_CONFIG = {
+            apiProxyUrl: '/api/gas',
             gasApiUrl: window.GAS_API_URL || localStorage.getItem('gasApiUrl') || 'PASTE_YOUR_GAS_WEB_APP_URL_HERE'
         };
 
@@ -548,24 +549,37 @@
             }
 
             if (!isExternalApiReady()) {
-                fail('ยังไม่ได้ตั้งค่า APP_CONFIG.gasApiUrl สำหรับโหมด Vercel');
+                // ลองผ่าน proxy ของ Vercel ก่อน (แนะนำ)
+                fetch(APP_CONFIG.apiProxyUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: action, payload: safeArgs })
+                })
+                    .then(resp => resp.json())
+                    .then(json => {
+                        if (json && json.success) ok(json.data);
+                        else fail((json && json.error) || 'Server response error');
+                    })
+                    .catch(function() {
+                        fail('ไม่สามารถเชื่อมต่อ API ได้ กรุณาตั้งค่า Vercel Function (/api/gas) หรือกำหนด gasApiUrl');
+                    });
                 return;
             }
 
-            const body = new URLSearchParams();
-            body.set('action', action);
-            body.set('payload', JSON.stringify(safeArgs));
+            // ถ้าตั้งค่า gasApiUrl มาเอง ให้ลองยิงตรง
+            const directBody = new URLSearchParams();
+            directBody.set('action', action);
+            directBody.set('payload', JSON.stringify(safeArgs));
 
-            fetch(APP_CONFIG.gasApiUrl, {
-                method: 'POST',
-                body: body
-            })
+            fetch(APP_CONFIG.gasApiUrl, { method: 'POST', body: directBody })
                 .then(resp => resp.json())
                 .then(json => {
                     if (json && json.success) ok(json.data);
                     else fail((json && json.error) || 'Server response error');
                 })
-                .catch(fail);
+                .catch(function() {
+                    fail('ไม่สามารถเชื่อมต่อ GAS API โดยตรงได้ (อาจติด CORS) แนะนำใช้ /api/gas proxy บน Vercel');
+                });
         }
 
         // --- Hashing ---
@@ -594,7 +608,7 @@
                         populateMeetingDropdowns();
                     }, 300);
                 }, function(err) {
-                    Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้', 'error');
+                    Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้: ' + (err || 'Unknown error'), 'error');
                 });
         };
 
