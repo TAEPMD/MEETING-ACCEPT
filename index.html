@@ -548,37 +548,74 @@
                 return;
             }
 
-            if (!isExternalApiReady()) {
-                // ลองผ่าน proxy ของ Vercel ก่อน (แนะนำ)
-                fetch(APP_CONFIG.apiProxyUrl, {
+            function requestViaProxy() {
+                return fetch(APP_CONFIG.apiProxyUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: action, payload: safeArgs })
-                })
-                    .then(resp => resp.json())
-                    .then(json => {
-                        if (json && json.success) ok(json.data);
-                        else fail((json && json.error) || 'Server response error');
-                    })
-                    .catch(function() {
-                        fail('ไม่สามารถเชื่อมต่อ API ได้ กรุณาตั้งค่า Vercel Function (/api/gas) หรือกำหนด gasApiUrl');
-                    });
-                return;
+                }).then(async (resp) => {
+                    let json = null;
+                    try { json = await resp.json(); } catch (e) {}
+
+                    if (!resp.ok) {
+                        throw new Error('proxy_http_' + resp.status + ':' + ((json && json.error) || resp.statusText || 'Proxy error'));
+                    }
+                    if (!json || !json.success) {
+                        throw new Error('proxy_logic:' + ((json && json.error) || 'Server response error'));
+                    }
+                    return json.data;
+                });
             }
 
-            // ถ้าตั้งค่า gasApiUrl มาเอง ให้ลองยิงตรง
-            const directBody = new URLSearchParams();
-            directBody.set('action', action);
-            directBody.set('payload', JSON.stringify(safeArgs));
+            function requestDirectGas() {
+                if (!isExternalApiReady()) {
+                    return Promise.reject(new Error('missing_gas_url'));
+                }
 
-            fetch(APP_CONFIG.gasApiUrl, { method: 'POST', body: directBody })
-                .then(resp => resp.json())
-                .then(json => {
-                    if (json && json.success) ok(json.data);
-                    else fail((json && json.error) || 'Server response error');
-                })
-                .catch(function() {
-                    fail('ไม่สามารถเชื่อมต่อ GAS API โดยตรงได้ (อาจติด CORS) แนะนำใช้ /api/gas proxy บน Vercel');
+                const directBody = new URLSearchParams();
+                directBody.set('action', action);
+                directBody.set('payload', JSON.stringify(safeArgs));
+
+                return fetch(APP_CONFIG.gasApiUrl, { method: 'POST', body: directBody })
+                    .then(async (resp) => {
+                        let json = null;
+                        try { json = await resp.json(); } catch (e) {}
+
+                        if (!resp.ok) {
+                            throw new Error('gas_http_' + resp.status + ':' + ((json && json.error) || resp.statusText || 'GAS error'));
+                        }
+                        if (!json || !json.success) {
+                            throw new Error('gas_logic:' + ((json && json.error) || 'Server response error'));
+                        }
+                        return json.data;
+                    });
+            }
+
+            // ลองผ่าน proxy ก่อนเสมอ (ดีที่สุดบน Vercel), ถ้าไม่สำเร็จค่อย fallback
+            requestViaProxy()
+                .then(ok)
+                .catch(function(proxyErr) {
+                    requestDirectGas()
+                        .then(ok)
+                        .catch(function(gasErr) {
+                            const pMsg = String(proxyErr && proxyErr.message || proxyErr || '');
+                            const gMsg = String(gasErr && gasErr.message || gasErr || '');
+
+                            if (pMsg.indexOf('proxy_http_404') === 0) {
+                                fail('ไม่พบ Vercel Function /api/gas (404) กรุณา redeploy โปรเจกต์และตรวจสอบว่าไฟล์ api/gas.js อยู่ใน repo');
+                                return;
+                            }
+                            if (gMsg.indexOf('gas_http_403') === 0) {
+                                fail('GAS API ตอบกลับ 403: ให้ตั้ง Deploy เป็น Execute as: Me และ Who has access: Anyone แล้ว Deploy ใหม่');
+                                return;
+                            }
+                            if (gMsg === 'missing_gas_url') {
+                                fail('ไม่สามารถเชื่อมต่อ API ได้: กรุณาตั้งค่า Vercel Function (/api/gas) หรือกำหนด gasApiUrl');
+                                return;
+                            }
+
+                            fail('เชื่อมต่อฐานข้อมูลไม่สำเร็จ | Proxy: ' + pMsg + ' | GAS: ' + gMsg);
+                        });
                 });
         }
 
