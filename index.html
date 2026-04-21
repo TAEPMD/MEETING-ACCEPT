@@ -266,12 +266,15 @@
                         </div>
 
                         <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple relative">
-                            <div class="flex justify-between items-center mb-6">
+                            <div class="flex justify-between items-center mb-6 flex-col sm:flex-row gap-3">
                                 <div>
                                     <h3 class="font-heading font-semibold text-lg">รายชื่อผู้มีสิทธิ์เข้าร่วม</h3>
                                     <p class="text-sm text-apple-muted">รวม <span id="attendee-count" class="font-bold text-apple-text">0</span> คน</p>
                                 </div>
-                                <button onclick="clearAllAttendees()" class="text-sm text-ems-red bg-red-50 px-3 py-1.5 rounded-full hover:bg-red-100 transition-colors"><i class="fa-solid fa-trash-can mr-1"></i> ล้างทั้งหมด</button>
+                                <div class="flex gap-2 w-full sm:w-auto">
+                                    <button id="save-attendees-btn" onclick="saveAttendeesList()" class="flex-1 sm:flex-none text-sm bg-ems-yellow text-ems-dark px-4 py-2 rounded-full font-semibold hover:scale-105 transition-transform shadow-sm"><i class="fa-solid fa-floppy-disk mr-1"></i> Save</button>
+                                    <button onclick="clearAllAttendees()" class="flex-1 sm:flex-none text-sm text-ems-red bg-red-50 px-3 py-1.5 rounded-full hover:bg-red-100 transition-colors"><i class="fa-solid fa-trash-can mr-1"></i> ล้างทั้งหมด</button>
+                                </div>
                             </div>
 
                             <div id="pdf-upload-loading" class="hidden absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center z-10 rounded-3xl">
@@ -1166,17 +1169,19 @@
             if(users.length === 0) { list.innerHTML = `<li class="py-8 text-center text-apple-muted">ยังไม่มีรายชื่อในระบบ</li>`; return; }
 
             users.forEach((user, idx) => {
+                const userNameSafe = user.name.replace(/'/g, "\\'");
+                const uploadBtnId = `upload-btn-${mtgId}-${idx}`;
                 let fileUI = user.pdfUrl 
                     ? `<div class="flex items-center gap-2">
                         <span class="text-xs font-medium text-ems-green bg-green-50 px-2.5 py-1 rounded-md border border-green-200 truncate max-w-[100px] sm:max-w-[150px]"><i class="fa-solid fa-file-pdf mr-1"></i> มีไฟล์แนบ</span>
-                        ${canManage ? `<button onclick="removeIndividualPDF('${mtgId}', '${user.name}')" class="text-ems-red hover:bg-red-50 p-1.5 rounded-full transition-colors" title="ลบไฟล์"><i class="fa-solid fa-xmark"></i></button>` : ''}
+                        ${canManage ? `<button onclick="removeIndividualPDF('${mtgId}', '${userNameSafe}')" class="text-ems-red hover:bg-red-50 p-1.5 rounded-full transition-colors" title="ลบไฟล์"><i class="fa-solid fa-xmark"></i></button>` : ''}
                        </div>`
-                    : (canManage ? `<button onclick="triggerIndividualUpload('${mtgId}', '${user.name}')" class="text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-paperclip mr-1"></i> แนบไฟล์</button>` : '<span class="text-xs text-apple-muted">-</span>');
+                    : (canManage ? `<button id="${uploadBtnId}" onclick="triggerIndividualUpload('${mtgId}', '${userNameSafe}')" class="upload-attendee-btn text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-paperclip mr-1"></i> แนบไฟล์</button>` : '<span class="text-xs text-apple-muted">-</span>');
 
                 const attendeeActions = canManage
                     ? `<div class="w-px h-4 bg-apple-border hidden sm:block"></div>
-                            <button onclick="editAttendeeName('${mtgId}', '${user.name.replace(/'/g, "\\'")}')" class="text-apple-muted hover:text-ems-yellow p-1.5 rounded-full hover:bg-yellow-50 transition-colors" title="แก้ไขชื่อ"><i class="fa-solid fa-pen"></i></button>
-                            <button onclick="removeAttendee('${mtgId}', '${user.name.replace(/'/g, "\\'")}')" class="text-apple-muted hover:text-ems-red p-1.5 rounded-full hover:bg-red-50 transition-colors" title="ลบรายชื่อ"><i class="fa-solid fa-trash-can"></i></button>`
+                            <button onclick="editAttendeeName('${mtgId}', '${userNameSafe}')" class="text-apple-muted hover:text-ems-yellow p-1.5 rounded-full hover:bg-yellow-50 transition-colors" title="แก้ไขชื่อ"><i class="fa-solid fa-pen"></i></button>
+                            <button onclick="removeAttendee('${mtgId}', '${userNameSafe}')" class="text-apple-muted hover:text-ems-red p-1.5 rounded-full hover:bg-red-50 transition-colors" title="ลบรายชื่อ"><i class="fa-solid fa-trash-can"></i></button>`
                     : '<span class="text-xs text-apple-muted">ดูอย่างเดียว</span>';
 
                 list.innerHTML += `
@@ -1196,49 +1201,71 @@
                 showAlert('error', 'ไม่มีสิทธิ์', `Role ${currentAdminRole} ไม่ได้รับสิทธิ์อัปโหลดไฟล์ของการประชุมนี้`);
                 return;
             }
-            currentUploadTarget = { mtgId, name };
+            const userIndex = (db.attendees[mtgId] || []).findIndex(u => u.name.trim() === name.trim());
+            currentUploadTarget = { mtgId, name, userIndex };
             document.getElementById('temp-file-input').click();
         }
 
         function handleIndividualUpload(e) {
             if (!guardManagePermission()) return;
             const file = e.target.files[0]; if (!file) return;
-            const { mtgId, name } = currentUploadTarget;
+            const { mtgId, name, userIndex } = currentUploadTarget;
             const users = db.attendees[mtgId];
-            const userIndex = users.findIndex(u => u.name.trim() === name.trim());
             
-            if (userIndex > -1) {
-                document.getElementById('pdf-upload-loading').classList.remove('hidden');
+            if (userIndex > -1 && users && users[userIndex]) {
+                // ค้นหาปุ่ม upload สำหรับรายชื่อนี้โดยใช้ ID ที่สอดคล้อง
+                const uploadBtnId = `upload-btn-${mtgId}-${userIndex}`;
+                const uploadBtn = document.getElementById(uploadBtnId);
+                const originalHTML = uploadBtn ? uploadBtn.innerHTML : '<i class="fa-solid fa-paperclip mr-1"></i> แนบไฟล์';
+                
+                // เพิ่ม loading state บนปุ่ม
+                if (uploadBtn) {
+                    uploadBtn.disabled = true;
+                    uploadBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> กำลังอัปโหลด...';
+                    uploadBtn.style.opacity = '0.6';
+                }
                 
                 const reader = new FileReader();
-                reader.onload = function(e) {
-                    const base64Data = e.target.result.split(',')[1];
+                reader.onload = function(ev) {
+                    const base64Data = ev.target.result.split(',')[1];
                     
                     if(isGasRuntime() || isExternalApiReady()) {
-                        // โยนให้ฝั่ง Server รับผิดชอบไปสร้างไฟล์ใน Drive พร้อมส่ง oldFileId เพื่อลบไฟล์เก่า
                         const oldFileId = db.attendees[mtgId][userIndex].fileId || "";
                         const allowedRoles = getAllowedUploadRolesForMeeting(mtgId);
                         callServer('uploadPdfToDrive', [base64Data, file.name, mtgId, name, oldFileId, currentAdminRole, allowedRoles], function(result) {
-                                document.getElementById('pdf-upload-loading').classList.add('hidden');
+                                if(uploadBtn) {
+                                    uploadBtn.disabled = false;
+                                    uploadBtn.innerHTML = originalHTML;
+                                    uploadBtn.style.opacity = '1';
+                                }
                                 if(result.success) {
                                     db.attendees[mtgId][userIndex].pdfUrl = result.url;
                                     db.attendees[mtgId][userIndex].pdfName = result.name;
-                                    db.attendees[mtgId][userIndex].fileId = result.fileId;  // เก็บ File ID
-                                    syncAttendeesToServer(mtgId); // อัปเดตตาราง Attendees
+                                    db.attendees[mtgId][userIndex].fileId = result.fileId;
+                                    syncAttendeesToServer(mtgId);
                                     renderAttendees();
+                                    showAlert('success', 'อัปโหลดสำเร็จ', `ระบบแนบไฟล์สำหรับ ${name} เรียบร้อยแล้ว`);
                                 } else {
                                     showAlert('error', 'ข้อผิดพลาด', 'อัปโหลดลง Drive ไม่สำเร็จ: ' + (result.error || "Unknown error"));
                                 }
                             }, function(err) {
-                                document.getElementById('pdf-upload-loading').classList.add('hidden');
+                                if(uploadBtn) {
+                                    uploadBtn.disabled = false;
+                                    uploadBtn.innerHTML = originalHTML;
+                                    uploadBtn.style.opacity = '1';
+                                }
                                 showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อกับ Server ได้');
                             });
                     } else {
                         // Mock Preview Mode
                         setTimeout(() => {
-                            db.attendees[mtgId][userIndex].pdfUrl = e.target.result;
+                            db.attendees[mtgId][userIndex].pdfUrl = ev.target.result;
                             db.attendees[mtgId][userIndex].pdfName = file.name;
-                            document.getElementById('pdf-upload-loading').classList.add('hidden');
+                            if(uploadBtn) {
+                                uploadBtn.disabled = false;
+                                uploadBtn.innerHTML = originalHTML;
+                                uploadBtn.style.opacity = '1';
+                            }
                             renderAttendees();
                         }, 800);
                     }
@@ -1252,6 +1279,37 @@
             if (!guardManagePermission()) return;
             const user = db.attendees[mtgId].find(u => u.name.trim() === name.trim());
             if (user) { user.pdfUrl = ""; user.pdfName = ""; user.fileId = ""; renderAttendees(); syncAttendeesToServer(mtgId); }
+        }
+
+        function saveAttendeesList() {
+            if (!guardManagePermission()) return;
+            const mtgId = document.getElementById('admin-select-meeting').value;
+            if (!mtgId) {
+                showAlert('warning', 'แจ้งเตือน', 'กรุณาเลือกการประชุมก่อน');
+                return;
+            }
+
+            const saveBtn = document.getElementById('save-attendees-btn');
+            let originalHTML = '<i class="fa-solid fa-floppy-disk mr-1"></i> Save';
+            if (saveBtn) {
+                originalHTML = saveBtn.innerHTML;
+                saveBtn.disabled = true;
+                saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> กำลังบันทึก...';
+            }
+
+            callServer('saveAttendeesToServer', [mtgId, db.attendees[mtgId] || []], function() {
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = originalHTML;
+                }
+                showAlert('success', 'บันทึกสำเร็จ', 'ระบบบันทึกรายชื่อและเอกสารลง Sheet เรียบร้อยแล้ว');
+            }, function(err) {
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = originalHTML;
+                }
+                showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถบันทึกข้อมูลได้: ' + (err || 'Unknown error'));
+            });
         }
 
         function addAttendee() {
