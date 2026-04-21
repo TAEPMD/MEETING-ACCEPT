@@ -161,6 +161,7 @@
                             <button id="tab-meetings" onclick="switchAdminTab('meetings')" class="active">การประชุม</button>
                             <button id="tab-attendees" onclick="switchAdminTab('attendees')">รายชื่อ & เอกสาร</button>
                             <button id="tab-history" onclick="switchAdminTab('history')">ประวัติ</button>
+                            <button id="tab-users" onclick="switchAdminTab('users')">User Control</button>
                         </div>
                         <button onclick="adminLogout()" class="w-10 h-10 rounded-full bg-apple-surface border border-apple-border text-apple-muted hover:text-ems-red hover:bg-red-50 transition-colors flex items-center justify-center shrink-0 self-end sm:self-auto" title="ออกจากระบบ Admin">
                             <i class="fa-solid fa-right-from-bracket"></i>
@@ -330,6 +331,62 @@
                                     </tr>
                                 </thead>
                                 <tbody id="admin-history-list" class="divide-y divide-apple-border text-sm"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Admin Tab: Users -->
+                <div id="admin-tab-users" class="admin-tab-content hidden space-y-6">
+                    <div id="users-admin-guard" class="hidden bg-orange-50 border border-orange-200 rounded-3xl p-5 text-sm text-orange-700">
+                        เฉพาะ ADMIN เท่านั้นที่สามารถจัดการผู้ใช้งานและสิทธิ์ PIN ได้
+                    </div>
+
+                    <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple">
+                        <h3 class="font-heading font-semibold text-lg mb-6 flex items-center gap-2" id="user-form-title">
+                            <i class="fa-solid fa-user-plus text-apple-muted"></i> เพิ่มผู้ใช้งานใหม่
+                        </h3>
+                        <form id="form-user" class="grid grid-cols-1 md:grid-cols-3 gap-5" onsubmit="handleSaveUser(event)">
+                            <input type="hidden" id="usr-id">
+                            <div>
+                                <label class="block text-sm text-apple-muted mb-1 ml-1">ชื่อผู้ใช้งาน</label>
+                                <input type="text" id="usr-name" required class="apple-input" placeholder="เช่น Admin A">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-apple-muted mb-1 ml-1">Role</label>
+                                <select id="usr-role" required class="apple-input">
+                                    <option value="admin">ADMIN</option>
+                                    <option value="secretary">SECRETARY</option>
+                                    <option value="coordinator">COORDINATOR</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm text-apple-muted mb-1 ml-1">PIN (ตัวเลขอย่างน้อย 4 หลัก)</label>
+                                <input type="password" id="usr-pin" required minlength="4" maxlength="10" pattern="[0-9]{4,10}" class="apple-input" placeholder="เช่น 123456">
+                            </div>
+                            <div class="md:col-span-3 flex justify-end gap-3 mt-2">
+                                <button type="button" onclick="resetUserForm()" class="px-6 py-2.5 rounded-full bg-apple-gray text-apple-text font-medium hover:bg-gray-200 transition-colors">ยกเลิก</button>
+                                <button type="submit" id="save-user-btn" class="px-6 py-2.5 rounded-full bg-ems-yellow text-ems-dark font-semibold shadow-sm hover:scale-105 transition-transform"><i class="fa-solid fa-check mr-1"></i> บันทึกผู้ใช้งาน</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-heading font-semibold text-lg">รายการผู้ใช้งาน Admin Area</h3>
+                            <span class="bg-apple-gray text-apple-text text-xs font-bold px-3 py-1 rounded-full"><span id="user-count">0</span> บัญชี</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse min-w-[700px]">
+                                <thead>
+                                    <tr class="text-apple-muted text-sm border-b border-apple-border">
+                                        <th class="pb-3 font-normal">ชื่อ</th>
+                                        <th class="pb-3 font-normal">Role</th>
+                                        <th class="pb-3 font-normal">PIN</th>
+                                        <th class="pb-3 font-normal text-right">จัดการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-users-list" class="divide-y divide-apple-border text-sm"></tbody>
                             </table>
                         </div>
                     </div>
@@ -514,11 +571,7 @@
         let ROLE_PIN_HASHES = {};
         let PIN_HASH_READY = false;
         let currentAdminRole = sessionStorage.getItem('adminRole') || 'admin';
-        const ROLE_PIN_MAP = {
-            admin: '140433',
-            secretary: '1669',
-            coordinator: '1990'
-        };
+        let currentAdminUserId = sessionStorage.getItem('adminUserId') || '';
 
         // ตั้งค่า URL ของ Apps Script Web App สำหรับโหมดที่ deploy หน้าเว็บบน Vercel
         // ตัวอย่าง: https://script.google.com/macros/s/AKfycb.../exec
@@ -633,15 +686,26 @@
         }
 
         async function initRolePinHashes() {
-            const entries = Object.entries(ROLE_PIN_MAP);
-            const hashes = await Promise.all(entries.map(async ([role, pin]) => [role, await getSHA256Hash(pin)]));
-            ROLE_PIN_HASHES = Object.fromEntries(hashes);
+            ROLE_PIN_HASHES = {};
             PIN_HASH_READY = true;
         }
 
-        function getRoleFromPinHash(pinHash) {
-            for (const role of Object.keys(ROLE_PIN_HASHES)) {
-                if (ROLE_PIN_HASHES[role] === pinHash) return role;
+        async function refreshRolePinHashesFromDb() {
+            const hashes = {};
+            (db.users || []).forEach(u => {
+                const uid = String(u.id || '').trim();
+                const hash = String(u.pinHash || '').trim();
+                if (uid && hash) hashes[uid] = hash;
+            });
+            ROLE_PIN_HASHES = hashes;
+            PIN_HASH_READY = true;
+        }
+
+        function getUserFromPinHash(pinHash) {
+            for (const uid of Object.keys(ROLE_PIN_HASHES)) {
+                if (ROLE_PIN_HASHES[uid] === pinHash) {
+                    return (db.users || []).find(u => String(u.id || '') === uid) || null;
+                }
             }
             return null;
         }
@@ -662,6 +726,7 @@
 
         function applyAdminRolePermissions() {
             const canManage = canManageAdminData();
+            const canManageUsers = isAdminRole();
             const roleSelect = document.getElementById('admin-role');
             if (roleSelect) {
                 roleSelect.disabled = true;
@@ -680,9 +745,18 @@
 
             document.querySelectorAll('button[onclick="addAttendee()"], button[onclick="importCSV()"], button[onclick="clearAllAttendees()"]')
                 .forEach(btn => { btn.disabled = !canManage; });
-        }
 
-        initRolePinHashes();
+            const usersGuard = document.getElementById('users-admin-guard');
+            if (usersGuard) usersGuard.classList.toggle('hidden', canManageUsers);
+
+            const userForm = document.getElementById('form-user');
+            if (userForm) {
+                userForm.querySelectorAll('input, select, button').forEach(el => {
+                    if (el.id === 'usr-id') return;
+                    el.disabled = !canManageUsers;
+                });
+            }
+        }
 
         // --- Init App (Production: เชื่อมต่อกับ Google Apps Script) ---
         window.onload = () => {
@@ -693,13 +767,16 @@
 
             callServer('getInitialData', [], function(serverData) {
                     db = serverData;
-                    document.getElementById('global-loader').style.opacity = '0';
-                    setTimeout(() => {
-                        document.getElementById('global-loader').classList.add('hidden');
-                        document.getElementById('view-role-selection').classList.remove('hidden');
-                        renderAdminMeetingsList();
-                        populateMeetingDropdowns();
-                    }, 300);
+                    refreshRolePinHashesFromDb().then(() => {
+                        document.getElementById('global-loader').style.opacity = '0';
+                        setTimeout(() => {
+                            document.getElementById('global-loader').classList.add('hidden');
+                            document.getElementById('view-role-selection').classList.remove('hidden');
+                            renderAdminMeetingsList();
+                            renderUsersList();
+                            populateMeetingDropdowns();
+                        }, 300);
+                    });
                 }, function(err) {
                     Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้: ' + (err || 'Unknown error'), 'error');
                 });
@@ -727,6 +804,10 @@
                 await Swal.fire({ icon: 'warning', title: 'กำลังโหลด', text: 'ระบบกำลังเตรียมพร้อม กรุณารอสักครู่แล้วลองใหม่', confirmButtonColor: '#1D1D1F', customClass: { popup: 'rounded-3xl font-heading' } });
                 return;
             }
+            if (!db.users || db.users.length === 0) {
+                showAlert('error', 'ไม่พบข้อมูลผู้ใช้งาน', 'กรุณารัน setupDatabase เพื่อสร้าง Users sheet และผู้ใช้เริ่มต้น');
+                return;
+            }
 
             const { value: enteredPin } = await Swal.fire({
                 title: '<i class="fa-solid fa-lock mb-2 text-2xl text-apple-text"></i><br>Admin Access',
@@ -744,11 +825,13 @@
 
             if (enteredPin) {
                 const enteredHash = await getSHA256Hash(enteredPin);
-                const matchedRole = getRoleFromPinHash(enteredHash);
-                if (matchedRole) {
+                const matchedUser = getUserFromPinHash(enteredHash);
+                if (matchedUser) {
                     sessionStorage.setItem('isAdminAuthed', 'true');
-                    currentAdminRole = matchedRole;
+                    currentAdminRole = String(matchedUser.role || 'coordinator').toLowerCase();
+                    currentAdminUserId = String(matchedUser.id || '');
                     sessionStorage.setItem('adminRole', currentAdminRole);
+                    sessionStorage.setItem('adminUserId', currentAdminUserId);
                     const roleSelect = document.getElementById('admin-role');
                     if (roleSelect) roleSelect.value = currentAdminRole;
                     updateAdminRoleBadge();
@@ -767,7 +850,9 @@
         function adminLogout() {
             sessionStorage.removeItem('isAdminAuthed');
             sessionStorage.removeItem('adminRole');
+            sessionStorage.removeItem('adminUserId');
             currentAdminRole = 'admin';
+            currentAdminUserId = '';
             const roleSelect = document.getElementById('admin-role');
             if (roleSelect) roleSelect.value = currentAdminRole;
             updateAdminRoleBadge();
@@ -779,7 +864,7 @@
         function showView(viewId) {
             document.querySelectorAll('.app-view').forEach(el => el.classList.add('hidden'));
             document.getElementById('view-' + viewId).classList.remove('hidden');
-            if(viewId === 'admin-dashboard') { updateAdminRoleBadge(); renderAdminMeetingsList(); switchAdminTab('meetings'); applyAdminRolePermissions(); }
+            if(viewId === 'admin-dashboard') { updateAdminRoleBadge(); renderAdminMeetingsList(); renderUsersList(); switchAdminTab('meetings'); applyAdminRolePermissions(); }
             if(viewId === 'user-dashboard') {
                 populateMeetingDropdowns(); document.getElementById('user-response-form').classList.add('hidden');
                 document.getElementById('user-select-meeting').value = ""; document.getElementById('invitation-download-section').classList.add('hidden');
@@ -796,6 +881,7 @@
             document.getElementById('admin-tab-' + tab).classList.remove('hidden'); document.getElementById('tab-' + tab).classList.add('active');
             if(tab === 'attendees') populateMeetingDropdowns();
             if(tab === 'history') { populateMeetingDropdowns(); renderHistory(); }
+            if(tab === 'users') { renderUsersList(); resetUserForm(); }
         }
 
         // ================= ADMIN: MEETINGS (SYNC SERVER) =================
@@ -1551,6 +1637,183 @@
             }, function(err) {
                 db.responses = oldResponses;
                 renderHistory();
+                showAlert('error', 'ลบไม่สำเร็จ', 'ไม่สามารถเชื่อมต่อกับ Server ได้: ' + (err || 'Unknown error'));
+            });
+        }
+
+        // ================= ADMIN: USERS =================
+        function guardUsersPermission() {
+            if (isAdminRole()) return true;
+            showAlert('error', 'ไม่มีสิทธิ์', 'เฉพาะ ADMIN เท่านั้นที่จัดการผู้ใช้งานได้');
+            return false;
+        }
+
+        function normalizeRoleLabel(role) {
+            return String(role || '').toUpperCase();
+        }
+
+        function resetUserForm() {
+            const form = document.getElementById('form-user');
+            if (form) form.reset();
+            const idInput = document.getElementById('usr-id');
+            const pinInput = document.getElementById('usr-pin');
+            const title = document.getElementById('user-form-title');
+            const saveBtn = document.getElementById('save-user-btn');
+            if (idInput) idInput.value = '';
+            if (pinInput) {
+                pinInput.required = true;
+                pinInput.placeholder = 'เช่น 123456';
+                pinInput.value = '';
+            }
+            if (title) title.innerHTML = '<i class="fa-solid fa-user-plus text-apple-muted"></i> เพิ่มผู้ใช้งานใหม่';
+            if (saveBtn) saveBtn.innerHTML = '<i class="fa-solid fa-check mr-1"></i> บันทึกผู้ใช้งาน';
+            applyAdminRolePermissions();
+        }
+
+        function renderUsersList() {
+            const tbody = document.getElementById('admin-users-list');
+            const countEl = document.getElementById('user-count');
+            if (!tbody || !countEl) return;
+
+            const users = [...(db.users || [])].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'th'));
+            countEl.innerText = users.length;
+            tbody.innerHTML = '';
+
+            if (users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center py-8 text-apple-muted">ยังไม่มีผู้ใช้งาน</td></tr>';
+                return;
+            }
+
+            const canManageUsers = isAdminRole();
+            users.forEach(u => {
+                const row = `
+                    <tr class="hover:bg-apple-gray transition-colors">
+                        <td class="py-3 px-2 font-medium">${u.name || '-'}</td>
+                        <td class="py-3 px-2"><span class="text-xs bg-apple-gray px-2 py-1 rounded-full">${normalizeRoleLabel(u.role)}</span></td>
+                        <td class="py-3 px-2 text-apple-muted">••••••</td>
+                        <td class="py-3 px-2 text-right">
+                            ${canManageUsers
+                                ? `<button onclick="editUser('${u.id}')" class="text-xs bg-white border border-apple-border hover:bg-yellow-50 text-apple-text px-3 py-1.5 rounded-full transition-colors shadow-sm"><i class="fa-solid fa-pen mr-1"></i> แก้ไข</button>
+                                   <button onclick="deleteUser('${u.id}')" class="text-xs bg-white border border-apple-border hover:bg-red-50 text-ems-red px-3 py-1.5 rounded-full transition-colors shadow-sm ml-2"><i class="fa-solid fa-trash-can mr-1"></i> ลบ</button>`
+                                : '<span class="text-xs text-apple-muted">ดูอย่างเดียว</span>'}
+                        </td>
+                    </tr>`;
+                tbody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+        function editUser(userId) {
+            if (!guardUsersPermission()) return;
+            const user = (db.users || []).find(u => u.id === userId);
+            if (!user) return;
+
+            document.getElementById('usr-id').value = user.id;
+            document.getElementById('usr-name').value = user.name || '';
+            document.getElementById('usr-role').value = String(user.role || 'coordinator').toLowerCase();
+            const pinInput = document.getElementById('usr-pin');
+            pinInput.value = '';
+            pinInput.required = false;
+            pinInput.placeholder = 'เว้นว่างหากไม่เปลี่ยน PIN';
+            document.getElementById('user-form-title').innerHTML = '<i class="fa-solid fa-user-pen text-apple-muted"></i> แก้ไขผู้ใช้งาน';
+            document.getElementById('save-user-btn').innerHTML = '<i class="fa-solid fa-check mr-1"></i> อัปเดตผู้ใช้งาน';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        async function handleSaveUser(e) {
+            e.preventDefault();
+            if (!guardUsersPermission()) return;
+
+            const userId = String(document.getElementById('usr-id').value || '').trim();
+            const name = String(document.getElementById('usr-name').value || '').trim();
+            const role = String(document.getElementById('usr-role').value || '').trim().toLowerCase();
+            const pin = String(document.getElementById('usr-pin').value || '').trim();
+            const isEdit = !!userId;
+
+            if (!name) {
+                showAlert('error', 'ข้อมูลไม่ครบ', 'กรุณาระบุชื่อผู้ใช้งาน');
+                return;
+            }
+
+            if (!isEdit && !/^\d{4,10}$/.test(pin)) {
+                showAlert('error', 'PIN ไม่ถูกต้อง', 'PIN ต้องเป็นตัวเลข 4-10 หลัก');
+                return;
+            }
+            if (isEdit && pin && !/^\d{4,10}$/.test(pin)) {
+                showAlert('error', 'PIN ไม่ถูกต้อง', 'PIN ต้องเป็นตัวเลข 4-10 หลัก');
+                return;
+            }
+
+            const finalId = isEdit ? userId : ('U' + Date.now());
+            const oldUser = (db.users || []).find(u => u.id === finalId);
+            const pinHash = pin ? await getSHA256Hash(pin) : String((oldUser && oldUser.pinHash) || '');
+
+            if (!pinHash || pinHash.length !== 64) {
+                showAlert('error', 'ข้อมูลไม่ครบ', 'กรุณาระบุ PIN สำหรับผู้ใช้งานนี้');
+                return;
+            }
+
+            const payload = { id: finalId, name, role, pinHash };
+
+            if (!db.users) db.users = [];
+            const idx = db.users.findIndex(u => u.id === finalId);
+            if (idx > -1) db.users[idx] = payload;
+            else db.users.push(payload);
+
+            callServer('saveUserToServer', [payload], function() {
+                refreshRolePinHashesFromDb();
+                renderUsersList();
+                resetUserForm();
+                showAlert('success', 'บันทึกสำเร็จ', 'บันทึกข้อมูลผู้ใช้งานเรียบร้อยแล้ว');
+            }, function(err) {
+                showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถบันทึกผู้ใช้งานได้: ' + (err || 'Unknown error'));
+            });
+        }
+
+        async function deleteUser(userId) {
+            if (!guardUsersPermission()) return;
+
+            const user = (db.users || []).find(u => u.id === userId);
+            if (!user) return;
+            if (String(userId) === String(currentAdminUserId)) {
+                showAlert('warning', 'ไม่อนุญาต', 'ไม่สามารถลบบัญชีที่กำลังล็อกอินใช้งานอยู่');
+                return;
+            }
+
+            const adminCount = (db.users || []).filter(u => String(u.role || '').toLowerCase() === 'admin').length;
+            if (String(user.role || '').toLowerCase() === 'admin' && adminCount <= 1) {
+                showAlert('warning', 'ไม่อนุญาต', 'ต้องมีผู้ใช้งาน role ADMIN อย่างน้อย 1 บัญชี');
+                return;
+            }
+
+            const result = await Swal.fire({
+                title: 'ยืนยันการลบผู้ใช้งาน',
+                text: `ต้องการลบ ${user.name} ใช่หรือไม่`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#FF3B30',
+                cancelButtonColor: '#86868B',
+                confirmButtonText: 'ลบผู้ใช้งาน',
+                cancelButtonText: 'ยกเลิก',
+                customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6', cancelButton: 'rounded-full px-6' }
+            });
+            if (!result.isConfirmed) return;
+
+            const oldUsers = [...(db.users || [])];
+            db.users = oldUsers.filter(u => u.id !== userId);
+            renderUsersList();
+
+            callServer('deleteUserFromServer', [userId], function(serverOk) {
+                if (!(serverOk === true || serverOk === 'true' || serverOk === 1)) {
+                    db.users = oldUsers;
+                    renderUsersList();
+                    showAlert('error', 'ลบไม่สำเร็จ', 'ไม่พบรายการผู้ใช้งานที่ต้องการลบ');
+                    return;
+                }
+                refreshRolePinHashesFromDb();
+                showAlert('success', 'ลบสำเร็จ', 'ระบบลบผู้ใช้งานเรียบร้อยแล้ว');
+            }, function(err) {
+                db.users = oldUsers;
+                renderUsersList();
                 showAlert('error', 'ลบไม่สำเร็จ', 'ไม่สามารถเชื่อมต่อกับ Server ได้: ' + (err || 'Unknown error'));
             });
         }
