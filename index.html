@@ -656,6 +656,10 @@
             return false;
         }
 
+        function isAdminRole() {
+            return String(currentAdminRole || '').toLowerCase() === 'admin';
+        }
+
         function applyAdminRolePermissions() {
             const canManage = canManageAdminData();
             const roleSelect = document.getElementById('admin-role');
@@ -1421,6 +1425,7 @@
             const statusFilter = document.getElementById('admin-history-status-filter').value;
             const sortMode = document.getElementById('admin-history-sort').value;
             const tbody = document.getElementById('admin-history-list');
+            const canDeleteHistory = isAdminRole();
             
             let filteredResponses = db.responses;
             if(filterMtgId && filterMtgId !== 'all') filteredResponses = db.responses.filter(r => r.meetingId === filterMtgId);
@@ -1445,6 +1450,12 @@
             filteredResponses.forEach(r => {
                 const modeLabel = r.attendanceMode ? ` (${String(r.attendanceMode).toLowerCase() === 'online' ? 'Online' : 'Onsite'})` : '';
                 const statusBadge = r.status === 'attend' ? `<span class="bg-green-100 text-ems-green px-2 py-1 rounded-md text-xs font-semibold"><i class="fa-solid fa-check mr-1"></i> เข้าร่วม${modeLabel}</span>` : `<span class="bg-red-100 text-ems-red px-2 py-1 rounded-md text-xs font-semibold" title="${r.reason}"><i class="fa-solid fa-xmark mr-1"></i> ไม่เข้าร่วม</span>`;
+                const actionButtons = canDeleteHistory
+                    ? `<button onclick="viewHistoryDetail('${r.id}')" class="text-xs bg-white border border-apple-border hover:bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full transition-colors whitespace-nowrap shadow-sm"><i class="fa-solid fa-circle-info mr-1"></i> รายละเอียด</button>
+                            <button onclick="printAdminResponse('${r.id}')" class="text-xs bg-white border border-apple-border hover:bg-apple-border text-apple-text px-3 py-1.5 rounded-full transition-colors whitespace-nowrap shadow-sm ml-2"><i class="fa-solid fa-print text-apple-muted mr-1"></i> PDF</button>
+                            <button onclick="deleteHistoryRecord('${r.id}')" class="text-xs bg-white border border-apple-border hover:bg-red-50 text-ems-red px-3 py-1.5 rounded-full transition-colors whitespace-nowrap shadow-sm ml-2"><i class="fa-solid fa-trash-can mr-1"></i> ลบ</button>`
+                    : `<button onclick="viewHistoryDetail('${r.id}')" class="text-xs bg-white border border-apple-border hover:bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full transition-colors whitespace-nowrap shadow-sm"><i class="fa-solid fa-circle-info mr-1"></i> รายละเอียด</button>
+                            <button onclick="printAdminResponse('${r.id}')" class="text-xs bg-white border border-apple-border hover:bg-apple-border text-apple-text px-3 py-1.5 rounded-full transition-colors whitespace-nowrap shadow-sm ml-2"><i class="fa-solid fa-print text-apple-muted mr-1"></i> PDF</button>`;
                 const row = `
                     <tr class="hover:bg-apple-gray transition-colors">
                         <td class="py-3 px-2 font-medium">${r.name}</td>
@@ -1452,7 +1463,7 @@
                         <td class="py-3 px-2">${statusBadge}</td>
                         <td class="py-3 px-2 text-apple-muted text-xs">${r.timestamp}</td>
                         <td class="py-3 px-2 text-right">
-                            <button onclick="printAdminResponse('${r.id}')" class="text-xs bg-white border border-apple-border hover:bg-apple-border text-apple-text px-3 py-1.5 rounded-full transition-colors whitespace-nowrap shadow-sm"><i class="fa-solid fa-print text-apple-muted mr-1"></i> PDF</button>
+                            ${actionButtons}
                         </td>
                     </tr>`;
                 tbody.insertAdjacentHTML('beforeend', row);
@@ -1471,6 +1482,78 @@
         }
 
         function printAdminResponse(responseId) { const data = db.responses.find(r => r.id === responseId); if(data) executePrint(data, true); }
+
+        function viewHistoryDetail(responseId) {
+            const data = db.responses.find(r => r.id === responseId);
+            if (!data) {
+                showAlert('error', 'ไม่พบข้อมูล', 'ไม่พบรายละเอียดรายการประวัติที่เลือก');
+                return;
+            }
+
+            const statusText = data.status === 'attend' ? 'เข้าร่วม' : 'ไม่เข้าร่วม';
+            const modeText = data.attendanceMode
+                ? (String(data.attendanceMode).toLowerCase() === 'online' ? 'Online' : 'Onsite')
+                : '-';
+
+            Swal.fire({
+                title: 'รายละเอียดการตอบรับ',
+                html: `
+                    <div class="text-left text-sm space-y-2">
+                        <p><b>รหัส:</b> ${data.id || '-'}</p>
+                        <p><b>ชื่อผู้ตอบรับ:</b> ${data.name || '-'}</p>
+                        <p><b>หัวข้อประชุม:</b> ${data.topic || '-'}</p>
+                        <p><b>วันที่:</b> ${data.date || '-'}</p>
+                        <p><b>เวลา:</b> ${data.time || '-'} น.</p>
+                        <p><b>สถานที่:</b> ${data.location || '-'}</p>
+                        <p><b>สถานะ:</b> ${statusText}</p>
+                        <p><b>รูปแบบการเข้าร่วม:</b> ${modeText}</p>
+                        <p><b>เหตุผล:</b> ${data.reason || '-'}</p>
+                        <p><b>เวลาที่บันทึก:</b> ${data.timestamp || '-'}</p>
+                    </div>
+                `,
+                confirmButtonText: 'ปิด',
+                confirmButtonColor: '#1D1D1F',
+                customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white' }
+            });
+        }
+
+        async function deleteHistoryRecord(responseId) {
+            if (!isAdminRole()) {
+                showAlert('error', 'ไม่มีสิทธิ์', 'เฉพาะ ADMIN เท่านั้นที่สามารถลบประวัติได้');
+                return;
+            }
+
+            const result = await Swal.fire({
+                title: 'ยืนยันการลบประวัติ',
+                text: 'รายการประวัตินี้จะถูกลบถาวร',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#FF3B30',
+                cancelButtonColor: '#86868B',
+                confirmButtonText: 'ลบรายการ',
+                cancelButtonText: 'ยกเลิก',
+                customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6', cancelButton: 'rounded-full px-6' }
+            });
+            if (!result.isConfirmed) return;
+
+            const oldResponses = [...db.responses];
+            db.responses = db.responses.filter(r => r.id !== responseId);
+            renderHistory();
+
+            callServer('deleteResponseFromServer', [String(responseId || '').trim()], function(serverOk) {
+                if (!(serverOk === true || serverOk === 'true' || serverOk === 1)) {
+                    db.responses = oldResponses;
+                    renderHistory();
+                    showAlert('error', 'ลบไม่สำเร็จ', 'ไม่พบรายการที่ต้องการลบบนฐานข้อมูล');
+                    return;
+                }
+                showAlert('success', 'ลบสำเร็จ', 'ระบบลบประวัติการตอบรับเรียบร้อยแล้ว');
+            }, function(err) {
+                db.responses = oldResponses;
+                renderHistory();
+                showAlert('error', 'ลบไม่สำเร็จ', 'ไม่สามารถเชื่อมต่อกับ Server ได้: ' + (err || 'Unknown error'));
+            });
+        }
 
         // ================= USER AREA (SYNC SERVER) =================
         function handleUserMeetingSelect() {
