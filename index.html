@@ -1151,9 +1151,39 @@
             if(oldAdmin) adminSelect.value = oldAdmin; if(oldUser) userSelect.value = oldUser; if(oldHistory) historyFilter.value = oldHistory;
         }
 
-        function syncAttendeesToServer(mtgId) {
-            callServer('saveAttendeesToServer', [mtgId, db.attendees[mtgId]], function(){}, function(err) {
-                showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถซิงค์ข้อมูลรายชื่อได้');
+        function formatSyncError(err) {
+            if (!err) return 'Unknown error';
+            if (typeof err === 'string') return err;
+            if (err.message) return err.message;
+            try { return JSON.stringify(err); } catch (jsonErr) { return String(err); }
+        }
+
+        function syncAttendeesToServer(mtgId, options = {}) {
+            const targetMeetingId = String(mtgId || '').trim();
+            const payload = Array.isArray(db.attendees[targetMeetingId]) ? db.attendees[targetMeetingId] : [];
+            const onSuccess = typeof options.onSuccess === 'function' ? options.onSuccess : function(){};
+            const onFailure = typeof options.onFailure === 'function' ? options.onFailure : function(){};
+            const showError = options.showError !== false;
+
+            if (!targetMeetingId) {
+                const errorMessage = 'Missing meeting id';
+                if (showError) showAlert('error', 'ข้อผิดพลาด', 'ไม่พบรหัสการประชุมสำหรับซิงค์ข้อมูล');
+                onFailure(errorMessage);
+                return;
+            }
+
+            callServer('saveAttendeesToServer', [targetMeetingId, payload], function(result) {
+                if (result === false) {
+                    const errorMessage = 'Server returned false';
+                    if (showError) showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถซิงค์ข้อมูลรายชื่อไปยัง Sheet ได้');
+                    onFailure(errorMessage);
+                    return;
+                }
+                onSuccess(result);
+            }, function(err) {
+                const errorMessage = formatSyncError(err);
+                if (showError) showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถซิงค์รายชื่อไปยัง Sheet ได้: ' + errorMessage);
+                onFailure(errorMessage);
             });
         }
 
@@ -1242,9 +1272,17 @@
                                     db.attendees[mtgId][userIndex].pdfUrl = result.url;
                                     db.attendees[mtgId][userIndex].pdfName = result.name;
                                     db.attendees[mtgId][userIndex].fileId = result.fileId;
-                                    syncAttendeesToServer(mtgId);
-                                    renderAttendees();
-                                    showAlert('success', 'อัปโหลดสำเร็จ', `ระบบแนบไฟล์สำหรับ ${name} เรียบร้อยแล้ว`);
+                                    syncAttendeesToServer(mtgId, {
+                                        onSuccess: function() {
+                                            renderAttendees();
+                                            showAlert('success', 'อัปโหลดสำเร็จ', `ระบบแนบไฟล์สำหรับ ${name} และบันทึกข้อมูลลง Sheet เรียบร้อยแล้ว`);
+                                        },
+                                        onFailure: function(errorMessage) {
+                                            renderAttendees();
+                                            showAlert('warning', 'อัปโหลดสำเร็จบางส่วน', `อัปโหลดไฟล์สำหรับ ${name} สำเร็จแล้ว แต่บันทึกข้อมูลรายชื่อไม่สำเร็จ: ${errorMessage}`);
+                                        },
+                                        showError: false
+                                    });
                                 } else {
                                     showAlert('error', 'ข้อผิดพลาด', 'อัปโหลดลง Drive ไม่สำเร็จ: ' + (result.error || "Unknown error"));
                                 }
@@ -1297,18 +1335,22 @@
                 saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> กำลังบันทึก...';
             }
 
-            callServer('saveAttendeesToServer', [mtgId, db.attendees[mtgId] || []], function() {
-                if (saveBtn) {
-                    saveBtn.disabled = false;
-                    saveBtn.innerHTML = originalHTML;
-                }
-                showAlert('success', 'บันทึกสำเร็จ', 'ระบบบันทึกรายชื่อและเอกสารลง Sheet เรียบร้อยแล้ว');
-            }, function(err) {
-                if (saveBtn) {
-                    saveBtn.disabled = false;
-                    saveBtn.innerHTML = originalHTML;
-                }
-                showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถบันทึกข้อมูลได้: ' + (err || 'Unknown error'));
+            syncAttendeesToServer(mtgId, {
+                onSuccess: function() {
+                    if (saveBtn) {
+                        saveBtn.disabled = false;
+                        saveBtn.innerHTML = originalHTML;
+                    }
+                    showAlert('success', 'บันทึกสำเร็จ', 'ระบบบันทึกรายชื่อและเอกสารลง Sheet เรียบร้อยแล้ว');
+                },
+                onFailure: function(errorMessage) {
+                    if (saveBtn) {
+                        saveBtn.disabled = false;
+                        saveBtn.innerHTML = originalHTML;
+                    }
+                    showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถบันทึกข้อมูลได้: ' + errorMessage);
+                },
+                showError: false
             });
         }
 
