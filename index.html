@@ -669,10 +669,16 @@
             }
 
             function requestViaProxy() {
+                const proxyBody = {
+                    action: action,
+                    payload: safeArgs,
+                    gasApiUrl: isExternalApiReady() ? APP_CONFIG.gasApiUrl : ''
+                };
+
                 return fetch(APP_CONFIG.apiProxyUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: action, payload: safeArgs })
+                    body: JSON.stringify(proxyBody)
                 }).then(async (resp) => {
                     let json = null;
                     try { json = await resp.json(); } catch (e) {}
@@ -715,7 +721,8 @@
                 return gasMessage === 'missing_gas_url'
                     || proxyMessage.indexOf('proxy_http_404') === 0
                     || proxyMessage.indexOf('Missing GAS_API_URL env on Vercel') > -1
-                    || proxyMessage.indexOf('proxy_logic:Missing GAS_API_URL env on Vercel') === 0;
+                    || proxyMessage.indexOf('proxy_logic:Missing GAS_API_URL env on Vercel') === 0
+                    || proxyMessage.indexOf('proxy_logic:Invalid JSON from GAS') === 0;
             }
 
             function getDirectGasPromptReason(proxyMessage) {
@@ -724,6 +731,9 @@
                 }
                 if (proxyMessage.indexOf('Missing GAS_API_URL env on Vercel') > -1) {
                     return 'Vercel ยังไม่ได้ตั้งค่า GAS_API_URL ระบบจะใช้ Apps Script URL โดยตรงแทน';
+                }
+                if (proxyMessage.indexOf('proxy_logic:Invalid JSON from GAS') === 0) {
+                    return 'URL ของ GAS ที่ใช้อยู่ไม่ถูกต้องหรือไม่ได้เป็น Web App /exec กรุณาระบุ URL ที่ถูกต้อง';
                 }
                 return 'กรุณาระบุ Apps Script Web App URL เพื่อเชื่อมต่อฐานข้อมูล';
             }
@@ -738,7 +748,12 @@
                     }
 
                     return promptForGasApiUrl(getDirectGasPromptReason(proxyMessage))
-                        .then(function() { return requestDirectGas(); });
+                        .then(function() {
+                            // หลังผู้ใช้ระบุ URL ใหม่ ให้ลองผ่าน proxy อีกครั้งก่อนเพื่อเลี่ยง CORS
+                            return requestViaProxy().catch(function() {
+                                return requestDirectGas();
+                            });
+                        });
                 });
             }
 
