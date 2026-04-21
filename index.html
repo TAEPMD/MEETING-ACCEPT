@@ -585,6 +585,7 @@
             apiProxyUrl: '/api/gas',
             gasApiUrl: window.GAS_API_URL || localStorage.getItem('gasApiUrl') || 'PASTE_YOUR_GAS_WEB_APP_URL_HERE'
         };
+        let gasUrlPromptInFlight = null;
 
         function isGasRuntime() {
             return typeof google !== 'undefined' && google.script && google.script.run;
@@ -592,6 +593,64 @@
 
         function isExternalApiReady() {
             return APP_CONFIG.gasApiUrl && APP_CONFIG.gasApiUrl.indexOf('PASTE_YOUR_GAS_WEB_APP_URL_HERE') === -1;
+        }
+
+        function normalizeGasApiUrl(url) {
+            return String(url || '').trim().replace(/\/$/, '');
+        }
+
+        function setGasApiUrl(url) {
+            const normalizedUrl = normalizeGasApiUrl(url);
+            if (normalizedUrl) {
+                APP_CONFIG.gasApiUrl = normalizedUrl;
+                localStorage.setItem('gasApiUrl', normalizedUrl);
+            } else {
+                APP_CONFIG.gasApiUrl = 'PASTE_YOUR_GAS_WEB_APP_URL_HERE';
+                localStorage.removeItem('gasApiUrl');
+            }
+            return APP_CONFIG.gasApiUrl;
+        }
+
+        function promptForGasApiUrl(reasonMessage) {
+            if (gasUrlPromptInFlight) return gasUrlPromptInFlight;
+            if (typeof Swal === 'undefined') return Promise.reject(new Error('missing_gas_url'));
+
+            gasUrlPromptInFlight = Swal.fire({
+                icon: 'info',
+                title: 'ตั้งค่า GAS API URL',
+                text: 'ระบุ URL ของ Apps Script Web App เพื่อเชื่อมต่อ Google Sheets และ Google Drive',
+                input: 'url',
+                inputValue: isExternalApiReady() ? APP_CONFIG.gasApiUrl : '',
+                inputPlaceholder: 'https://script.google.com/macros/s/.../exec',
+                showCancelButton: true,
+                confirmButtonColor: '#1D1D1F',
+                cancelButtonColor: '#86868B',
+                confirmButtonText: 'บันทึกและลองใหม่',
+                cancelButtonText: 'ยกเลิก',
+                footer: `<span class="text-xs text-apple-muted">${reasonMessage || 'หากใช้ Vercel สามารถใส่ URL นี้ครั้งเดียว แล้วระบบจะจำค่าไว้ในเครื่องนี้'}</span>`,
+                inputValidator: (value) => {
+                    const normalizedUrl = normalizeGasApiUrl(value);
+                    if (!normalizedUrl) return 'กรุณาระบุ Apps Script Web App URL';
+                    if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec(?:\?.*)?$/.test(normalizedUrl)) {
+                        return 'URL ต้องเป็น Apps Script Web App ที่ลงท้ายด้วย /exec';
+                    }
+                    return undefined;
+                },
+                customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white', cancelButton: 'rounded-full px-6' }
+            }).then((result) => {
+                gasUrlPromptInFlight = null;
+                if (!result.isConfirmed || !result.value) {
+                    throw new Error('missing_gas_url');
+                }
+                const normalizedUrl = normalizeGasApiUrl(result.value);
+                setGasApiUrl(normalizedUrl);
+                return normalizedUrl;
+            }).catch((err) => {
+                gasUrlPromptInFlight = null;
+                throw err;
+            });
+
+            return gasUrlPromptInFlight;
         }
 
         function callServer(action, args, onSuccess, onFailure) {
@@ -652,11 +711,42 @@
                     });
             }
 
+            function shouldPromptForDirectGas(proxyMessage, gasMessage) {
+                return gasMessage === 'missing_gas_url'
+                    || proxyMessage.indexOf('proxy_http_404') === 0
+                    || proxyMessage.indexOf('Missing GAS_API_URL env on Vercel') > -1
+                    || proxyMessage.indexOf('proxy_logic:Missing GAS_API_URL env on Vercel') === 0;
+            }
+
+            function getDirectGasPromptReason(proxyMessage) {
+                if (proxyMessage.indexOf('proxy_http_404') === 0) {
+                    return 'ไม่พบ Vercel Function /api/gas บนเว็บนี้ ระบบจะเชื่อมต่อ Apps Script โดยตรงแทน';
+                }
+                if (proxyMessage.indexOf('Missing GAS_API_URL env on Vercel') > -1) {
+                    return 'Vercel ยังไม่ได้ตั้งค่า GAS_API_URL ระบบจะใช้ Apps Script URL โดยตรงแทน';
+                }
+                return 'กรุณาระบุ Apps Script Web App URL เพื่อเชื่อมต่อฐานข้อมูล';
+            }
+
+            function requestDirectGasWithRecovery(proxyErr) {
+                const proxyMessage = String(proxyErr && proxyErr.message || proxyErr || '');
+
+                return requestDirectGas().catch(function(gasErr) {
+                    const gasMessage = String(gasErr && gasErr.message || gasErr || '');
+                    if (!shouldPromptForDirectGas(proxyMessage, gasMessage)) {
+                        throw gasErr;
+                    }
+
+                    return promptForGasApiUrl(getDirectGasPromptReason(proxyMessage))
+                        .then(function() { return requestDirectGas(); });
+                });
+            }
+
             // ลองผ่าน proxy ก่อนเสมอ (ดีที่สุดบน Vercel), ถ้าไม่สำเร็จค่อย fallback
             requestViaProxy()
                 .then(ok)
                 .catch(function(proxyErr) {
-                    requestDirectGas()
+                    requestDirectGasWithRecovery(proxyErr)
                         .then(ok)
                         .catch(function(gasErr) {
                             const pMsg = String(proxyErr && proxyErr.message || proxyErr || '');
@@ -671,7 +761,7 @@
                                 return;
                             }
                             if (gMsg === 'missing_gas_url') {
-                                fail('ไม่สามารถเชื่อมต่อ API ได้: กรุณาตั้งค่า Vercel Function (/api/gas) หรือกำหนด gasApiUrl');
+                                fail('ไม่สามารถเชื่อมต่อ API ได้: กรุณากำหนด Apps Script Web App URL (ลงท้ายด้วย /exec) หรือเปิดใช้ /api/gas บน Vercel');
                                 return;
                             }
 
