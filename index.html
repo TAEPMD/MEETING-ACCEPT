@@ -143,9 +143,9 @@
                         <div class="flex items-center gap-2 bg-apple-surface border border-apple-border rounded-full px-3 py-1.5 w-full sm:w-auto">
                             <i class="fa-solid fa-user-shield text-apple-muted text-sm"></i>
                             <select id="admin-role" onchange="handleAdminRoleChange()" class="bg-transparent text-sm text-apple-text focus:outline-none">
-                                <option value="admin">admin</option>
-                                <option value="secretary">secretary</option>
-                                <option value="coordinator">coordinator</option>
+                                <option value="admin">ADMIN</option>
+                                <option value="secretary">SECRETARY</option>
+                                <option value="coordinator">COORDINATOR</option>
                             </select>
                             <span id="admin-role-badge" class="text-[10px] bg-apple-gray px-2 py-0.5 rounded-full text-apple-muted">Role</span>
                         </div>
@@ -511,9 +511,14 @@
         let currentAgendaTargetMeetingId = null;
         let currentEditableResponseId = null;
         let isEditingExistingResponse = false;
-        let TARGET_PIN_HASH = "";
+        let ROLE_PIN_HASHES = {};
         let PIN_HASH_READY = false;
         let currentAdminRole = sessionStorage.getItem('adminRole') || 'admin';
+        const ROLE_PIN_MAP = {
+            admin: '140433',
+            secretary: '1669',
+            coordinator: '1990'
+        };
 
         // ตั้งค่า URL ของ Apps Script Web App สำหรับโหมดที่ deploy หน้าเว็บบน Vercel
         // ตัวอย่าง: https://script.google.com/macros/s/AKfycb.../exec
@@ -626,14 +631,61 @@
             const hashArray = Array.from(new Uint8Array(hashBuffer));
             return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         }
-        // ตั้งค่า Hash สำหรับ PIN: 140433
-        getSHA256Hash("140433").then(hash => { TARGET_PIN_HASH = hash; PIN_HASH_READY = true; });
+
+        async function initRolePinHashes() {
+            const entries = Object.entries(ROLE_PIN_MAP);
+            const hashes = await Promise.all(entries.map(async ([role, pin]) => [role, await getSHA256Hash(pin)]));
+            ROLE_PIN_HASHES = Object.fromEntries(hashes);
+            PIN_HASH_READY = true;
+        }
+
+        function getRoleFromPinHash(pinHash) {
+            for (const role of Object.keys(ROLE_PIN_HASHES)) {
+                if (ROLE_PIN_HASHES[role] === pinHash) return role;
+            }
+            return null;
+        }
+
+        function canManageAdminData() {
+            return currentAdminRole === 'admin' || currentAdminRole === 'secretary';
+        }
+
+        function guardManagePermission() {
+            if (canManageAdminData()) return true;
+            showAlert('error', 'ไม่มีสิทธิ์', 'Role COORDINATOR สามารถดูข้อมูลได้อย่างเดียว');
+            return false;
+        }
+
+        function applyAdminRolePermissions() {
+            const canManage = canManageAdminData();
+            const roleSelect = document.getElementById('admin-role');
+            if (roleSelect) {
+                roleSelect.disabled = true;
+                roleSelect.title = 'Role จะถูกกำหนดตาม PIN ที่ล็อกอิน';
+            }
+
+            document.querySelectorAll('#form-meeting input, #form-meeting button').forEach(el => {
+                if (el.id === 'mtg-id') return;
+                el.disabled = !canManage;
+            });
+
+            const newAttendeeInput = document.getElementById('new-attendee-name');
+            const csvInput = document.getElementById('csv-file');
+            if (newAttendeeInput) newAttendeeInput.disabled = !canManage;
+            if (csvInput) csvInput.disabled = !canManage;
+
+            document.querySelectorAll('button[onclick="addAttendee()"], button[onclick="importCSV()"], button[onclick="clearAllAttendees()"]')
+                .forEach(btn => { btn.disabled = !canManage; });
+        }
+
+        initRolePinHashes();
 
         // --- Init App (Production: เชื่อมต่อกับ Google Apps Script) ---
         window.onload = () => {
             const roleSelect = document.getElementById('admin-role');
             if (roleSelect) roleSelect.value = currentAdminRole;
             updateAdminRoleBadge();
+            applyAdminRolePermissions();
 
             callServer('getInitialData', [], function(serverData) {
                     db = serverData;
@@ -652,14 +704,16 @@
         function handleAdminRoleChange() {
             const roleSelect = document.getElementById('admin-role');
             if (!roleSelect) return;
-            currentAdminRole = roleSelect.value || 'admin';
-            sessionStorage.setItem('adminRole', currentAdminRole);
-            updateAdminRoleBadge();
+            if ((roleSelect.value || 'admin') !== currentAdminRole) {
+                roleSelect.value = currentAdminRole;
+                showAlert('warning', 'ไม่สามารถเปลี่ยน Role', 'ระบบกำหนด Role ตาม PIN ที่ล็อกอินเท่านั้น');
+            }
         }
 
         function updateAdminRoleBadge() {
             const roleBadge = document.getElementById('admin-role-badge');
             if (roleBadge) roleBadge.innerText = String(currentAdminRole || 'admin').toUpperCase();
+            applyAdminRolePermissions();
         }
 
         // --- ระบบตรวจสอบ Admin PIN ---
@@ -672,10 +726,10 @@
 
             const { value: enteredPin } = await Swal.fire({
                 title: '<i class="fa-solid fa-lock mb-2 text-2xl text-apple-text"></i><br>Admin Access',
-                text: 'กรุณากรอกรหัส PIN 6 หลัก',
+                text: 'กรุณากรอกรหัส PIN',
                 input: 'password',
                 inputAttributes: {
-                    inputmode: 'numeric', pattern: '[0-9]*', maxlength: '6',
+                    inputmode: 'numeric', pattern: '[0-9]*', maxlength: '10',
                     style: 'text-align: center; letter-spacing: 0.5em; font-size: 1.5rem; border-radius: 12px; background-color: #F2F2F7; border: none; outline: none; padding: 15px;'
                 },
                 showCancelButton: true, confirmButtonColor: '#EDFF21', cancelButtonColor: '#E5E5EA',
@@ -686,30 +740,16 @@
 
             if (enteredPin) {
                 const enteredHash = await getSHA256Hash(enteredPin);
-                if (enteredHash === TARGET_PIN_HASH) {
-                    const roleResult = await Swal.fire({
-                        title: 'เลือกบทบาทผู้ดูแล',
-                        input: 'select',
-                        inputOptions: {
-                            admin: 'admin',
-                            secretary: 'secretary',
-                            coordinator: 'coordinator'
-                        },
-                        inputValue: currentAdminRole || 'admin',
-                        inputPlaceholder: 'เลือก role สำหรับ session นี้',
-                        confirmButtonColor: '#1D1D1F',
-                        customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white' }
-                    });
-                    if (!roleResult.value) return;
-
+                const matchedRole = getRoleFromPinHash(enteredHash);
+                if (matchedRole) {
                     sessionStorage.setItem('isAdminAuthed', 'true');
-                    currentAdminRole = roleResult.value;
+                    currentAdminRole = matchedRole;
                     sessionStorage.setItem('adminRole', currentAdminRole);
                     const roleSelect = document.getElementById('admin-role');
                     if (roleSelect) roleSelect.value = currentAdminRole;
                     updateAdminRoleBadge();
                     Swal.fire({
-                        toast: true, position: 'top', icon: 'success', title: 'ปลดล็อกระบบสำเร็จ',
+                        toast: true, position: 'top', icon: 'success', title: `ปลดล็อกระบบสำเร็จ (${String(currentAdminRole).toUpperCase()})`,
                         showConfirmButton: false, timer: 1500, timerProgressBar: true,
                         customClass: { popup: 'rounded-2xl font-heading shadow-apple mt-4' }
                     });
@@ -735,7 +775,7 @@
         function showView(viewId) {
             document.querySelectorAll('.app-view').forEach(el => el.classList.add('hidden'));
             document.getElementById('view-' + viewId).classList.remove('hidden');
-            if(viewId === 'admin-dashboard') { updateAdminRoleBadge(); renderAdminMeetingsList(); switchAdminTab('meetings'); }
+            if(viewId === 'admin-dashboard') { updateAdminRoleBadge(); renderAdminMeetingsList(); switchAdminTab('meetings'); applyAdminRolePermissions(); }
             if(viewId === 'user-dashboard') {
                 populateMeetingDropdowns(); document.getElementById('user-response-form').classList.add('hidden');
                 document.getElementById('user-select-meeting').value = ""; document.getElementById('invitation-download-section').classList.add('hidden');
@@ -757,6 +797,7 @@
         // ================= ADMIN: MEETINGS (SYNC SERVER) =================
         function handleSaveMeeting(e) {
             e.preventDefault();
+            if (!guardManagePermission()) return;
             const id = document.getElementById('mtg-id').value;
             const meeting = {
                 id: id ? id : "M" + Date.now().toString().slice(-9),
@@ -801,6 +842,7 @@
         }
 
         function editMeeting(id) {
+            if (!guardManagePermission()) return;
             const meeting = db.meetings.find(m => m.id === id); if (!meeting) return;
             document.getElementById('mtg-id').value = meeting.id; document.getElementById('mtg-topic').value = meeting.topic;
             document.getElementById('mtg-date').value = meeting.date; document.getElementById('mtg-time').value = meeting.time;
@@ -822,6 +864,7 @@
         }
 
         function deleteMeeting(id) {
+            if (!guardManagePermission()) return;
             Swal.fire({
                 title: 'ยืนยันการลบ', text: "ข้อมูลและรายชื่อจะถูกลบถาวร", icon: 'warning',
                 showCancelButton: true, confirmButtonColor: '#FF3B30', cancelButtonColor: '#86868B',
@@ -842,6 +885,7 @@
         function renderAdminMeetingsList() {
             const tbody = document.getElementById('admin-meetings-list'); tbody.innerHTML = '';
             if (db.meetings.length === 0) { tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-apple-muted">ไม่มีข้อมูลการประชุม</td></tr>`; return; }
+            const canManage = canManageAdminData();
             const statusFilter = document.getElementById('meeting-status-filter') ? document.getElementById('meeting-status-filter').value : 'all';
             let sortedMtg = [...db.meetings].sort((a,b) => new Date(b.date) - new Date(a.date));
             if (statusFilter === 'active') sortedMtg = sortedMtg.filter(m => m.isActive !== false);
@@ -855,11 +899,19 @@
             sortedMtg.forEach(m => {
                 const isActive = m.isActive !== false;
                 const agendaCell = m.agendaUrl
-                    ? `<div class="flex items-center gap-2"><a href="${m.agendaUrl}" target="_blank" class="text-xs text-blue-600 underline truncate max-w-[120px]" title="${m.agendaName || 'วาระการประชุม'}">${m.agendaName || 'ดาวน์โหลด'}</a><button onclick="triggerAgendaUpload('${m.id}')" class="text-xs bg-apple-gray px-2 py-1 rounded-full border border-apple-border hover:bg-ems-yellow transition-colors"><i class="fa-solid fa-rotate"></i></button></div>`
-                    : `<button onclick="triggerAgendaUpload('${m.id}')" class="text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-upload mr-1"></i> อัปโหลด</button>`;
-                const activeBadge = isActive
-                    ? `<button onclick="toggleMeetingActive('${m.id}', false)" title="คลิกเพื่อปิดการรับตอบสำหรับการประชุมนี้" class="inline-flex items-center gap-1 text-xs font-semibold bg-green-100 text-green-800 px-3 py-1.5 rounded-full border border-green-300 hover:bg-green-200 transition-colors"><span class="w-2 h-2 rounded-full bg-green-600"></span>Active</button>`
-                    : `<button onclick="toggleMeetingActive('${m.id}', true)" title="คลิกเพื่อเปิดการรับตอบสำหรับการประชุมนี้อีกครั้ง" class="inline-flex items-center gap-1 text-xs font-semibold bg-red-100 text-red-700 px-3 py-1.5 rounded-full border border-red-300 hover:bg-red-200 transition-colors"><span class="w-2 h-2 rounded-full bg-red-500"></span>Inactive</button>`;
+                    ? `<div class="flex items-center gap-2"><a href="${m.agendaUrl}" target="_blank" class="text-xs text-blue-600 underline truncate max-w-[120px]" title="${m.agendaName || 'วาระการประชุม'}">${m.agendaName || 'ดาวน์โหลด'}</a>${canManage ? `<button onclick="triggerAgendaUpload('${m.id}')" class="text-xs bg-apple-gray px-2 py-1 rounded-full border border-apple-border hover:bg-ems-yellow transition-colors"><i class="fa-solid fa-rotate"></i></button>` : ''}</div>`
+                    : (canManage ? `<button onclick="triggerAgendaUpload('${m.id}')" class="text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-upload mr-1"></i> อัปโหลด</button>` : '<span class="text-xs text-apple-muted">-</span>');
+                const activeBadge = canManage
+                    ? (isActive
+                        ? `<button onclick="toggleMeetingActive('${m.id}', false)" title="คลิกเพื่อปิดการรับตอบสำหรับการประชุมนี้" class="inline-flex items-center gap-1 text-xs font-semibold bg-green-100 text-green-800 px-3 py-1.5 rounded-full border border-green-300 hover:bg-green-200 transition-colors"><span class="w-2 h-2 rounded-full bg-green-600"></span>Active</button>`
+                        : `<button onclick="toggleMeetingActive('${m.id}', true)" title="คลิกเพื่อเปิดการรับตอบสำหรับการประชุมนี้อีกครั้ง" class="inline-flex items-center gap-1 text-xs font-semibold bg-red-100 text-red-700 px-3 py-1.5 rounded-full border border-red-300 hover:bg-red-200 transition-colors"><span class="w-2 h-2 rounded-full bg-red-500"></span>Inactive</button>`)
+                    : (isActive
+                        ? `<span class="inline-flex items-center gap-1 text-xs font-semibold bg-green-100 text-green-800 px-3 py-1.5 rounded-full border border-green-300"><span class="w-2 h-2 rounded-full bg-green-600"></span>Active</span>`
+                        : `<span class="inline-flex items-center gap-1 text-xs font-semibold bg-red-100 text-red-700 px-3 py-1.5 rounded-full border border-red-300"><span class="w-2 h-2 rounded-full bg-red-500"></span>Inactive</span>`);
+                const actionButtons = canManage
+                    ? `<button onclick="editMeeting('${m.id}')" class="w-8 h-8 rounded-full bg-white border border-apple-border text-apple-text hover:bg-apple-gray transition-colors mx-1"><i class="fa-solid fa-pen text-xs"></i></button>
+                            <button onclick="deleteMeeting('${m.id}')" class="w-8 h-8 rounded-full bg-white border border-apple-border text-ems-red hover:bg-red-50 transition-colors"><i class="fa-solid fa-trash text-xs"></i></button>`
+                    : '<span class="text-xs text-apple-muted">ดูอย่างเดียว</span>';
                 const row = `
                     <tr class="group hover:bg-apple-gray transition-colors ${isActive ? '' : 'opacity-70'}">
                         <td class="py-4 px-2 align-top"><p class="font-medium text-apple-text">${m.topic}</p>${m.hybridEnabled ? '<span class="inline-block mt-1 text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Hybrid</span>' : ''}</td>
@@ -868,8 +920,7 @@
                         <td class="py-4 px-2 align-top text-sm">${activeBadge}</td>
                         <td class="py-4 px-2 align-top text-sm">${agendaCell}</td>
                         <td class="py-4 px-2 align-top text-right whitespace-nowrap">
-                            <button onclick="editMeeting('${m.id}')" class="w-8 h-8 rounded-full bg-white border border-apple-border text-apple-text hover:bg-apple-gray transition-colors mx-1"><i class="fa-solid fa-pen text-xs"></i></button>
-                            <button onclick="deleteMeeting('${m.id}')" class="w-8 h-8 rounded-full bg-white border border-apple-border text-ems-red hover:bg-red-50 transition-colors"><i class="fa-solid fa-trash text-xs"></i></button>
+                            ${actionButtons}
                         </td>
                     </tr>`;
                 tbody.insertAdjacentHTML('beforeend', row);
@@ -877,6 +928,7 @@
         }
 
         function toggleMeetingActive(mtgId, nextState) {
+            if (!guardManagePermission()) return;
             const meetingIndex = db.meetings.findIndex(m => m.id === mtgId);
             if (meetingIndex < 0) return;
 
@@ -902,6 +954,7 @@
         }
 
         function canCurrentRoleUpload(mtgId) {
+            if (!canManageAdminData()) return false;
             const roles = String(getAllowedUploadRolesForMeeting(mtgId) || '')
                 .split(',')
                 .map(r => r.trim().toLowerCase())
@@ -910,6 +963,7 @@
         }
 
         function triggerAgendaUpload(mtgId) {
+            if (!guardManagePermission()) return;
             if (!canCurrentRoleUpload(mtgId)) {
                 showAlert('error', 'ไม่มีสิทธิ์', `Role ${currentAdminRole} ไม่ได้รับสิทธิ์อัปโหลดไฟล์ของการประชุมนี้`);
                 return;
@@ -919,6 +973,7 @@
         }
 
         function handleAgendaUpload(e) {
+            if (!guardManagePermission()) return;
             const file = e.target.files[0];
             if (!file || !currentAgendaTargetMeetingId) return;
             const mtgId = currentAgendaTargetMeetingId;
@@ -1012,6 +1067,7 @@
         function renderAttendees() {
             const mtgId = document.getElementById('admin-select-meeting').value;
             const container = document.getElementById('attendee-manager'); const list = document.getElementById('attendees-list'); const count = document.getElementById('attendee-count');
+            const canManage = canManageAdminData();
             
             if (!mtgId) { container.classList.add('hidden'); return; }
             container.classList.remove('hidden');
@@ -1023,24 +1079,29 @@
                 let fileUI = user.pdfUrl 
                     ? `<div class="flex items-center gap-2">
                         <span class="text-xs font-medium text-ems-green bg-green-50 px-2.5 py-1 rounded-md border border-green-200 truncate max-w-[100px] sm:max-w-[150px]"><i class="fa-solid fa-file-pdf mr-1"></i> มีไฟล์แนบ</span>
-                        <button onclick="removeIndividualPDF('${mtgId}', '${user.name}')" class="text-ems-red hover:bg-red-50 p-1.5 rounded-full transition-colors" title="ลบไฟล์"><i class="fa-solid fa-xmark"></i></button>
+                        ${canManage ? `<button onclick="removeIndividualPDF('${mtgId}', '${user.name}')" class="text-ems-red hover:bg-red-50 p-1.5 rounded-full transition-colors" title="ลบไฟล์"><i class="fa-solid fa-xmark"></i></button>` : ''}
                        </div>`
-                    : `<button onclick="triggerIndividualUpload('${mtgId}', '${user.name}')" class="text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-paperclip mr-1"></i> แนบไฟล์</button>`;
+                    : (canManage ? `<button onclick="triggerIndividualUpload('${mtgId}', '${user.name}')" class="text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-paperclip mr-1"></i> แนบไฟล์</button>` : '<span class="text-xs text-apple-muted">-</span>');
+
+                const attendeeActions = canManage
+                    ? `<div class="w-px h-4 bg-apple-border hidden sm:block"></div>
+                            <button onclick="editAttendeeName('${mtgId}', '${user.name.replace(/'/g, "\\'")}')" class="text-apple-muted hover:text-ems-yellow p-1.5 rounded-full hover:bg-yellow-50 transition-colors" title="แก้ไขชื่อ"><i class="fa-solid fa-pen"></i></button>
+                            <button onclick="removeAttendee('${mtgId}', '${user.name.replace(/'/g, "\\'")}')" class="text-apple-muted hover:text-ems-red p-1.5 rounded-full hover:bg-red-50 transition-colors" title="ลบรายชื่อ"><i class="fa-solid fa-trash-can"></i></button>`
+                    : '<span class="text-xs text-apple-muted">ดูอย่างเดียว</span>';
 
                 list.innerHTML += `
                     <li class="py-3 px-2 flex flex-col sm:flex-row justify-between items-start sm:items-center hover:bg-apple-gray/50 transition-colors gap-3">
                         <div class="flex items-center gap-3"><span class="text-apple-muted w-5 text-right text-sm">${idx + 1}.</span><span class="font-medium">${user.name}</span></div>
                         <div class="flex items-center gap-3 ml-8 sm:ml-0">
                             ${fileUI}
-                            <div class="w-px h-4 bg-apple-border hidden sm:block"></div>
-                            <button onclick="editAttendeeName('${mtgId}', '${user.name.replace(/'/g, "\\'")}')" class="text-apple-muted hover:text-ems-yellow p-1.5 rounded-full hover:bg-yellow-50 transition-colors" title="แก้ไขชื่อ"><i class="fa-solid fa-pen"></i></button>
-                            <button onclick="removeAttendee('${mtgId}', '${user.name.replace(/'/g, "\\'")}')" class="text-apple-muted hover:text-ems-red p-1.5 rounded-full hover:bg-red-50 transition-colors" title="ลบรายชื่อ"><i class="fa-solid fa-trash-can"></i></button>
+                            ${attendeeActions}
                         </div>
                     </li>`;
             });
         }
 
         function triggerIndividualUpload(mtgId, name) {
+            if (!guardManagePermission()) return;
             if (!canCurrentRoleUpload(mtgId)) {
                 showAlert('error', 'ไม่มีสิทธิ์', `Role ${currentAdminRole} ไม่ได้รับสิทธิ์อัปโหลดไฟล์ของการประชุมนี้`);
                 return;
@@ -1050,6 +1111,7 @@
         }
 
         function handleIndividualUpload(e) {
+            if (!guardManagePermission()) return;
             const file = e.target.files[0]; if (!file) return;
             const { mtgId, name } = currentUploadTarget;
             const users = db.attendees[mtgId];
@@ -1097,11 +1159,13 @@
         }
 
         function removeIndividualPDF(mtgId, name) {
+            if (!guardManagePermission()) return;
             const user = db.attendees[mtgId].find(u => u.name.trim() === name.trim());
             if (user) { user.pdfUrl = ""; user.pdfName = ""; user.fileId = ""; renderAttendees(); syncAttendeesToServer(mtgId); }
         }
 
         function addAttendee() {
+            if (!guardManagePermission()) return;
             const mtgId = document.getElementById('admin-select-meeting').value;
             const input = document.getElementById('new-attendee-name'); const name = input.value.trim();
             if(!name) return; if(!db.attendees[mtgId]) db.attendees[mtgId] = [];
@@ -1111,6 +1175,7 @@
         }
 
         function importCSV() {
+            if (!guardManagePermission()) return;
             const mtgId = document.getElementById('admin-select-meeting').value;
             const fileInput = document.getElementById('csv-file'); const file = fileInput.files[0];
             if(!mtgId || !file) { showAlert('warning', 'แจ้งเตือน', 'กรุณาเลือกการประชุมและไฟล์'); return; }
@@ -1304,12 +1369,14 @@
         }
 
         function removeAttendee(mtgId, name) { 
+            if (!guardManagePermission()) return;
             db.attendees[mtgId] = db.attendees[mtgId].filter(u => u.name.trim() !== name.trim()); 
             renderAttendees(); 
             syncAttendeesToServer(mtgId); 
         }
 
         async function editAttendeeName(mtgId, oldName) {
+            if (!guardManagePermission()) return;
             const { value: newName } = await Swal.fire({
                 title: 'แก้ไขชื่อผู้เข้าร่วม',
                 input: 'text',
@@ -1338,6 +1405,7 @@
         }
 
         function clearAllAttendees() {
+            if (!guardManagePermission()) return;
             const mtgId = document.getElementById('admin-select-meeting').value;
             if(!db.attendees[mtgId] || db.attendees[mtgId].length === 0) return;
             Swal.fire({
