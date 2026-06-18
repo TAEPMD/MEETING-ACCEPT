@@ -474,9 +474,14 @@
                                     <p id="agenda-file-name" class="text-xs text-blue-700/80">ไฟล์แนบสำหรับผู้เข้าร่วมทุกคน</p>
                                 </div>
                             </div>
+                            <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                                <a id="view-agenda-btn" href="#" target="_blank" rel="noopener" class="w-full sm:w-auto px-5 py-2.5 bg-white border border-blue-300 text-blue-700 font-medium rounded-full text-center shadow-sm hover:scale-105 transition-transform text-sm">
+                                    <i class="fa-solid fa-eye mr-1"></i> View PDF
+                                </a>
                             <a id="download-agenda-btn" href="#" target="_blank" class="w-full sm:w-auto px-5 py-2.5 bg-blue-600 text-white font-medium rounded-full text-center shadow-sm hover:scale-105 transition-transform text-sm">
                                 <i class="fa-solid fa-download mr-1"></i> ดาวน์โหลดวาระ
                             </a>
+                            </div>
                         </div>
 
                         <div id="attendance-section" class="hidden">
@@ -2655,6 +2660,129 @@
             }
         }
 
+        function renderUsersList() {
+            const tbody = document.getElementById('admin-users-list');
+            const countEl = document.getElementById('user-count');
+            if (!tbody || !countEl) return;
+
+            const users = [...(db.users || [])].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'th'));
+            countEl.innerText = users.length;
+            tbody.innerHTML = '';
+
+            if (users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center py-8 text-apple-muted">No users</td></tr>';
+                return;
+            }
+
+            const canManageUsers = isAdminRole();
+            users.forEach(u => {
+                const canShowPin = canManageUsers && String(u.pinPlain || '').trim();
+                const pinCell = canManageUsers
+                    ? `<button onclick="showUserPin('${u.id}')" class="text-xs bg-white border border-apple-border hover:bg-apple-gray text-apple-text px-3 py-1.5 rounded-full transition-colors shadow-sm">
+                            <i class="fa-solid fa-eye mr-1"></i> View PIN
+                       </button>${canShowPin ? '' : '<span class="text-xs text-apple-muted ml-2">reset PIN first</span>'}`
+                    : '<span class="text-apple-muted">******</span>';
+
+                const row = `
+                    <tr class="hover:bg-apple-gray transition-colors">
+                        <td class="py-3 px-2 font-medium">${u.name || '-'}</td>
+                        <td class="py-3 px-2"><span class="text-xs bg-apple-gray px-2 py-1 rounded-full">${normalizeRoleLabel(u.role)}</span></td>
+                        <td class="py-3 px-2">${pinCell}</td>
+                        <td class="py-3 px-2 text-right">
+                            ${canManageUsers
+                                ? `<button onclick="editUser('${u.id}')" class="text-xs bg-white border border-apple-border hover:bg-yellow-50 text-apple-text px-3 py-1.5 rounded-full transition-colors shadow-sm"><i class="fa-solid fa-pen mr-1"></i> Edit</button>
+                                   <button onclick="deleteUser('${u.id}')" class="text-xs bg-white border border-apple-border hover:bg-red-50 text-ems-red px-3 py-1.5 rounded-full transition-colors shadow-sm ml-2"><i class="fa-solid fa-trash-can mr-1"></i> Delete</button>`
+                                : '<span class="text-xs text-apple-muted">View only</span>'}
+                        </td>
+                    </tr>`;
+                tbody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+        function showUserPin(userId) {
+            if (!guardUsersPermission()) return;
+
+            const user = (db.users || []).find(u => String(u.id) === String(userId));
+            if (!user) return;
+
+            const pin = String(user.pinPlain || '').trim();
+            if (!pin) {
+                showAlert('warning', 'PIN unavailable', 'This user only has a saved PIN hash. Please edit the user and set a new PIN before it can be viewed.');
+                return;
+            }
+
+            Swal.fire({
+                icon: 'info',
+                title: 'User PIN',
+                html: `<div class="text-left space-y-2">
+                    <p><b>User:</b> ${user.name || '-'}</p>
+                    <p><b>Role:</b> ${normalizeRoleLabel(user.role)}</p>
+                    <div class="bg-apple-gray rounded-2xl px-4 py-3 text-center font-heading text-2xl tracking-widest">${pin}</div>
+                </div>`,
+                confirmButtonColor: '#1D1D1F',
+                customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white' }
+            });
+        }
+
+        async function handleSaveUser(e) {
+            e.preventDefault();
+            if (!guardUsersPermission()) return;
+
+            const userId = String(document.getElementById('usr-id').value || '').trim();
+            const name = String(document.getElementById('usr-name').value || '').trim();
+            const role = String(document.getElementById('usr-role').value || '').trim().toLowerCase();
+            const pin = String(document.getElementById('usr-pin').value || '').trim();
+            const isEdit = !!userId;
+
+            if (!name) {
+                showAlert('error', 'Missing data', 'Please enter a user name.');
+                return;
+            }
+
+            if (!isEdit && !/^\d{4,10}$/.test(pin)) {
+                showAlert('error', 'Invalid PIN', 'PIN must be 4-10 digits.');
+                return;
+            }
+
+            if (isEdit && pin && !/^\d{4,10}$/.test(pin)) {
+                showAlert('error', 'Invalid PIN', 'PIN must be 4-10 digits.');
+                return;
+            }
+
+            const finalId = isEdit ? userId : ('U' + Date.now());
+            const oldUser = (db.users || []).find(u => u.id === finalId);
+            const pinPlain = pin || String((oldUser && oldUser.pinPlain) || '');
+            const pinHash = pin ? await getSHA256Hash(pin) : String((oldUser && oldUser.pinHash) || '');
+
+            if (!pinHash || pinHash.length !== 64) {
+                showAlert('error', 'Missing PIN', 'Please set a PIN for this user.');
+                return;
+            }
+
+            const payload = { id: finalId, name, role, pinHash, pinPlain };
+
+            setGlobalLoading(true, 'Saving user...');
+            try {
+                const saved = await callServerAsync('saveUserToServer', [payload]);
+                if (!saved) throw new Error('saveUserToServer returned false');
+
+                if (!db.users) db.users = [];
+                const idx = db.users.findIndex(u => u.id === finalId);
+                if (idx > -1) db.users[idx] = payload;
+                else db.users.push(payload);
+
+                await refreshRolePinHashesFromDb();
+                renderUsersList();
+                resetUserForm();
+                showAlert('success', 'Saved', 'User data has been saved.');
+            } catch (err) {
+                console.error('Failed to save user:', err);
+                showAlert('error', 'Save failed', 'Unable to save user data.');
+            } finally {
+                setGlobalLoading(false);
+            }
+        }
+
         function setGlobalLoading(isLoading, text) {
             const loader = document.getElementById('global-loader');
             if (!loader) return;
@@ -2662,6 +2790,79 @@
             if (title && text) title.innerText = text;
             loader.classList.toggle('hidden', !isLoading);
             loader.style.opacity = isLoading ? '1' : '0';
+        }
+
+        function getPdfViewUrl(url) {
+            const rawUrl = String(url || '').trim();
+            if (!rawUrl) return '#';
+
+            const driveMatch = rawUrl.match(/\/file\/d\/([^/]+)/);
+            if (driveMatch && driveMatch[1]) {
+                return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
+            }
+
+            return rawUrl;
+        }
+
+        function handleUserMeetingSelect() {
+            const mtgId = document.getElementById('user-select-meeting').value;
+            const nameSelect = document.getElementById('user-name');
+            document.getElementById('user-response-form').classList.toggle('hidden', !mtgId);
+            nameSelect.innerHTML = '<option value="">-- Select name --</option>';
+
+            const dlSection = document.getElementById('invitation-download-section');
+            const agendaSection = document.getElementById('agenda-download-section');
+            const agendaBtn = document.getElementById('download-agenda-btn');
+            const viewAgendaBtn = document.getElementById('view-agenda-btn');
+            const agendaName = document.getElementById('agenda-file-name');
+
+            dlSection.classList.add('hidden');
+            agendaSection.classList.add('hidden');
+            document.getElementById('response-locked-banner').classList.add('hidden');
+            currentEditableResponseId = null;
+            isEditingExistingResponse = false;
+
+            const meeting = getMeetingById(mtgId);
+            if (meeting) {
+                document.getElementById('u-mtg-topic').innerText = meeting.topic;
+                document.getElementById('u-mtg-date').innerText = formatDateThai(meeting.date);
+                document.getElementById('u-mtg-time').innerText = meeting.time;
+                document.getElementById('u-mtg-location').innerText = meeting.location || '-';
+
+                const onlineRow = document.getElementById('u-mtg-online-row');
+                const onlineLink = document.getElementById('u-mtg-online-link');
+                if (meeting.onlineLink) {
+                    onlineLink.href = meeting.onlineLink;
+                    onlineLink.innerText = 'Join online';
+                    onlineRow.classList.remove('hidden');
+                } else {
+                    onlineRow.classList.add('hidden');
+                }
+
+                if (meeting.agendaUrl) {
+                    agendaBtn.href = meeting.agendaUrl;
+                    if (viewAgendaBtn) viewAgendaBtn.href = getPdfViewUrl(meeting.agendaUrl);
+                    agendaName.innerText = meeting.agendaName || 'Meeting agenda file';
+                    agendaSection.classList.remove('hidden');
+                }
+            }
+
+            const users = db.attendees[mtgId] || [];
+            let nameOptions = '<option value="">-- Select name --</option>';
+            users.sort((a, b) => a.name.localeCompare(b.name, 'th')).forEach(u => {
+                nameOptions += `<option value="${u.name}">${u.name}</option>`;
+            });
+            nameSelect.innerHTML = nameOptions;
+
+            document.querySelectorAll('input[name="attendance"]').forEach(r => r.checked = false);
+            document.getElementById('reason-container').classList.add('hidden');
+            document.getElementById('user-reason').removeAttribute('required');
+            document.getElementById('attendance-section').classList.add('hidden');
+            document.getElementById('attendance-mode-container').classList.add('hidden');
+            document.getElementById('attendance-mode').value = '';
+            document.getElementById('response-locked-summary').innerText = '';
+            setResponseFormLocked(false);
+            updateSubmitButtonState();
         }
 
         // Utils
