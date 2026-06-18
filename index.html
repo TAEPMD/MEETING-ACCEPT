@@ -2559,6 +2559,102 @@
             document.getElementById('meeting-form-title').innerHTML = '<i class="fa-solid fa-calendar-plus text-apple-muted"></i> Add meeting';
         }
 
+        function renderAdminMeetingsList() {
+            const tbody = document.getElementById('admin-meetings-list');
+            tbody.innerHTML = '';
+
+            if (db.meetings.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-apple-muted">No meeting data</td></tr>`;
+                return;
+            }
+
+            const canManage = canManageAdminData();
+            const statusFilter = document.getElementById('meeting-status-filter') ? document.getElementById('meeting-status-filter').value : 'all';
+            let sortedMtg = [...db.meetings].sort((a,b) => new Date(b.date) - new Date(a.date));
+            if (statusFilter === 'active') sortedMtg = sortedMtg.filter(m => m.isActive !== false);
+            if (statusFilter === 'inactive') sortedMtg = sortedMtg.filter(m => m.isActive === false);
+
+            if (sortedMtg.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-apple-muted">No meetings match this filter</td></tr>`;
+                return;
+            }
+
+            sortedMtg.forEach(m => {
+                const isActive = m.isActive !== false;
+                const agendaCell = m.agendaUrl
+                    ? `<div class="flex items-center gap-2"><a href="${m.agendaUrl}" target="_blank" class="text-xs text-blue-600 underline truncate max-w-[120px]" title="${m.agendaName || 'Agenda'}">${m.agendaName || 'Download'}</a>${canManage ? `<button onclick="triggerAgendaUpload('${m.id}')" class="text-xs bg-apple-gray px-2 py-1 rounded-full border border-apple-border hover:bg-ems-yellow transition-colors"><i class="fa-solid fa-rotate"></i></button>` : ''}</div>`
+                    : (canManage ? `<button onclick="triggerAgendaUpload('${m.id}')" class="text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-upload mr-1"></i> Upload</button>` : '<span class="text-xs text-apple-muted">-</span>');
+
+                const statusControl = canManage
+                    ? `<div class="flex items-center gap-2">
+                            <select data-meeting-status="${m.id}" onchange="markMeetingStatusDirty('${m.id}')" class="apple-input py-1.5 px-3 text-xs min-w-[110px]">
+                                <option value="active" ${isActive ? 'selected' : ''}>Active</option>
+                                <option value="inactive" ${!isActive ? 'selected' : ''}>Inactive</option>
+                            </select>
+                            <button data-meeting-status-save="${m.id}" onclick="saveMeetingStatusFromList('${m.id}')" class="inline-flex items-center gap-1 text-xs font-semibold bg-ems-yellow text-ems-dark px-3 py-1.5 rounded-full border border-apple-border hover:scale-105 transition-transform">
+                                <i class="fa-solid fa-floppy-disk"></i> Save
+                            </button>
+                        </div>`
+                    : (isActive
+                        ? `<span class="inline-flex items-center gap-1 text-xs font-semibold bg-green-100 text-green-800 px-3 py-1.5 rounded-full border border-green-300"><span class="w-2 h-2 rounded-full bg-green-600"></span>Active</span>`
+                        : `<span class="inline-flex items-center gap-1 text-xs font-semibold bg-red-100 text-red-700 px-3 py-1.5 rounded-full border border-red-300"><span class="w-2 h-2 rounded-full bg-red-500"></span>Inactive</span>`);
+
+                const actionButtons = canManage
+                    ? `<button onclick="editMeeting('${m.id}')" class="w-8 h-8 rounded-full bg-white border border-apple-border text-apple-text hover:bg-apple-gray transition-colors mx-1"><i class="fa-solid fa-pen text-xs"></i></button>
+                       <button onclick="deleteMeeting('${m.id}')" class="w-8 h-8 rounded-full bg-white border border-apple-border text-ems-red hover:bg-red-50 transition-colors"><i class="fa-solid fa-trash text-xs"></i></button>`
+                    : '<span class="text-xs text-apple-muted">View only</span>';
+
+                const row = `
+                    <tr class="group hover:bg-apple-gray transition-colors ${isActive ? '' : 'opacity-70'}">
+                        <td class="py-4 px-2 align-top"><p class="font-medium text-apple-text">${m.topic}</p>${m.hybridEnabled ? '<span class="inline-block mt-1 text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Hybrid</span>' : ''}</td>
+                        <td class="py-4 px-2 align-top text-sm"><p>${formatDateThai(m.date)}</p><p class="text-apple-muted">${m.time} น.</p></td>
+                        <td class="py-4 px-2 align-top text-sm text-apple-muted max-w-[150px] truncate" title="${m.location}">${m.location}</td>
+                        <td class="py-4 px-2 align-top text-sm">${statusControl}</td>
+                        <td class="py-4 px-2 align-top text-sm">${agendaCell}</td>
+                        <td class="py-4 px-2 align-top text-right whitespace-nowrap">${actionButtons}</td>
+                    </tr>`;
+                tbody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+        function markMeetingStatusDirty(mtgId) {
+            const btn = document.querySelector(`[data-meeting-status-save="${mtgId}"]`);
+            if (!btn) return;
+            btn.classList.add('ring-2', 'ring-ems-yellow');
+        }
+
+        async function saveMeetingStatusFromList(mtgId) {
+            if (!guardManagePermission()) return;
+
+            const select = document.querySelector(`[data-meeting-status="${mtgId}"]`);
+            if (!select) return;
+
+            const nextState = select.value === 'active';
+            const meetingIndex = db.meetings.findIndex(m => m.id === mtgId);
+            if (meetingIndex < 0) return;
+
+            const previousState = db.meetings[meetingIndex].isActive !== false;
+            db.meetings[meetingIndex].isActive = nextState;
+            renderAdminMeetingsList();
+            populateMeetingDropdowns();
+
+            setGlobalLoading(true, 'Saving status...');
+            try {
+                const saved = await callServerAsync('setMeetingActiveStatus', [mtgId, nextState]);
+                if (!saved) throw new Error('Meeting not found on server');
+                await refreshDbFromServer();
+                showAlert('success', 'Saved', `Status changed to ${nextState ? 'Active' : 'Inactive'}.`);
+            } catch (err) {
+                console.error('Failed to save meeting status:', err);
+                db.meetings[meetingIndex].isActive = previousState;
+                renderAdminMeetingsList();
+                populateMeetingDropdowns();
+                showAlert('error', 'Save failed', 'Unable to update Active/Inactive status on server.');
+            } finally {
+                setGlobalLoading(false);
+            }
+        }
+
         function setGlobalLoading(isLoading, text) {
             const loader = document.getElementById('global-loader');
             if (!loader) return;
