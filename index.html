@@ -208,6 +208,13 @@
                                     <p class="text-xs text-apple-muted">ถ้าเปิด ผู้ตอบรับที่เลือก "เข้าร่วม" ต้องเลือก Onsite หรือ Online</p>
                                 </div>
                             </div>
+                            <div>
+                                <label class="block text-sm text-apple-muted mb-1 ml-1">Topic status</label>
+                                <select id="mtg-is-active" class="apple-input">
+                                    <option value="active">Active</option>
+                                    <option value="inactive">Inactive</option>
+                                </select>
+                            </div>
                             <div class="md:col-span-2 flex justify-end gap-3 mt-4">
                                 <button type="button" onclick="resetMeetingForm()" class="px-6 py-2.5 rounded-full bg-apple-gray text-apple-text font-medium hover:bg-gray-200 transition-colors">ยกเลิก</button>
                                 <button type="submit" class="px-6 py-2.5 rounded-full bg-ems-yellow text-ems-dark font-semibold shadow-sm hover:scale-105 transition-transform"><i class="fa-solid fa-check mr-1"></i> บันทึกข้อมูล</button>
@@ -2402,7 +2409,7 @@
                 agendaFileId: '',
                 hybridEnabled: document.getElementById('mtg-hybrid-enabled').checked,
                 uploadRoles: (document.getElementById('mtg-upload-roles').value || 'admin').trim(),
-                isActive: true
+                isActive: document.getElementById('mtg-is-active') ? document.getElementById('mtg-is-active').value !== 'inactive' : true
             };
 
             if (id) {
@@ -2411,7 +2418,7 @@
                     meeting.agendaUrl = oldMeeting.agendaUrl || '';
                     meeting.agendaName = oldMeeting.agendaName || '';
                     meeting.agendaFileId = oldMeeting.agendaFileId || '';
-                    meeting.isActive = oldMeeting.isActive !== false;
+                    if (!document.getElementById('mtg-is-active')) meeting.isActive = oldMeeting.isActive !== false;
                 }
             }
 
@@ -2516,6 +2523,40 @@
                 showAlert('error', 'Read failed', 'Unable to read selected file.');
             };
             reader.readAsDataURL(file);
+        }
+
+        function editMeeting(id) {
+            if (!guardManagePermission()) return;
+
+            const meeting = db.meetings.find(m => m.id === id);
+            if (!meeting) return;
+
+            document.getElementById('mtg-id').value = meeting.id;
+            document.getElementById('mtg-topic').value = meeting.topic;
+            document.getElementById('mtg-date').value = meeting.date;
+            document.getElementById('mtg-time').value = meeting.time;
+            document.getElementById('mtg-location').value = meeting.location || '';
+            document.getElementById('mtg-online-link').value = meeting.onlineLink || '';
+            document.getElementById('mtg-hybrid-enabled').checked = !!meeting.hybridEnabled;
+            document.getElementById('mtg-upload-roles').value = meeting.uploadRoles || 'admin';
+            if (document.getElementById('mtg-is-active')) {
+                document.getElementById('mtg-is-active').value = meeting.isActive === false ? 'inactive' : 'active';
+            }
+            document.getElementById('meeting-form-title').innerHTML = '<i class="fa-solid fa-pen-to-square text-apple-muted"></i> Edit meeting';
+            window.scrollTo({top: 0, behavior: 'smooth'});
+        }
+
+        function resetMeetingForm() {
+            document.getElementById('form-meeting').reset();
+            document.getElementById('mtg-id').value = "";
+            document.getElementById('mtg-location').value = "";
+            document.getElementById('mtg-online-link').value = "";
+            document.getElementById('mtg-upload-roles').value = 'admin';
+            document.getElementById('mtg-hybrid-enabled').checked = false;
+            if (document.getElementById('mtg-is-active')) {
+                document.getElementById('mtg-is-active').value = 'active';
+            }
+            document.getElementById('meeting-form-title').innerHTML = '<i class="fa-solid fa-calendar-plus text-apple-muted"></i> Add meeting';
         }
 
         function setGlobalLoading(isLoading, text) {
