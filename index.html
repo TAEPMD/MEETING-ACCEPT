@@ -785,6 +785,21 @@
                 });
         }
 
+        function callServerAsync(action, args) {
+            return new Promise((resolve, reject) => {
+                callServer(action, args, resolve, reject);
+            });
+        }
+
+        async function refreshDbFromServer() {
+            const serverData = await callServerAsync('getInitialData', []);
+            db = serverData || { meetings: [], attendees: {}, responses: [], users: [] };
+            await refreshRolePinHashesFromDb();
+            renderAdminMeetingsList();
+            populateMeetingDropdowns();
+            return db;
+        }
+
         // --- Hashing ---
         async function getSHA256Hash(text) {
             const msgUint8 = new TextEncoder().encode(text);
@@ -993,7 +1008,7 @@
         }
 
         // ================= ADMIN: MEETINGS (SYNC SERVER) =================
-        function handleSaveMeeting(e) {
+        async function handleSaveMeeting(e) {
             e.preventDefault();
             if (!guardManagePermission()) return;
             const id = document.getElementById('mtg-id').value;
@@ -1031,12 +1046,36 @@
             }
             
             // ส่งไป Server
+            document.getElementById('global-loader').classList.remove('hidden');
+            document.getElementById('global-loader').style.opacity = '1';
+            document.querySelector('#global-loader h2').innerText = 'à¸à¸³à¸¥à¸±à¸‡à¸šà¸±à¸™à¸—à¸¶à¸à¸‚à¹‰à¸­à¸¡à¸¹à¸¥...';
+            document.querySelector('#global-loader h2').innerText = 'Saving data...';
+            await callServerAsync('saveMeetingToServer', [meeting]).catch(err => {
+                document.getElementById('global-loader').classList.add('hidden');
+                console.error('Failed to save meeting:', err);
+                showAlert('error', 'Save failed', 'Unable to save data to server.');
+                throw err;
+                showAlert('error', 'à¸‚à¹‰à¸­à¸œà¸´à¸”à¸žà¸¥à¸²à¸”', 'à¹„à¸¡à¹ˆà¸ªà¸²à¸¡à¸²à¸£à¸–à¸šà¸±à¸™à¸—à¸¶à¸à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¹„à¸”à¹‰');
+                throw err;
+            });
+            await refreshDbFromServer().catch(err => {
+                document.getElementById('global-loader').classList.add('hidden');
+                console.error('Failed to refresh after save:', err);
+                throw err;
+            });
+            document.getElementById('global-loader').classList.add('hidden');
+            resetMeetingForm();
+            showAlert('success', 'Saved', 'Meeting data has been saved.');
+            return;
+            showAlert('success', 'à¸šà¸±à¸™à¸—à¸¶à¸à¸ªà¸³à¹€à¸£à¹‡à¸ˆ', 'à¸­à¸±à¸›à¹€à¸”à¸•à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸à¸²à¸£à¸›à¸£à¸°à¸Šà¸¸à¸¡à¹à¸¥à¹‰à¸§');
+            /*
             callServer('saveMeetingToServer', [meeting], function() {}, function(err) {
                 showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้');
             });
 
             showAlert('success', 'บันทึกสำเร็จ', 'อัปเดตข้อมูลการประชุมแล้ว');
             resetMeetingForm(); renderAdminMeetingsList(); populateMeetingDropdowns();
+            */
         }
 
         function editMeeting(id) {
@@ -1125,7 +1164,7 @@
             });
         }
 
-        function toggleMeetingActive(mtgId, nextState) {
+        async function toggleMeetingActive(mtgId, nextState) {
             if (!guardManagePermission()) return;
             const meetingIndex = db.meetings.findIndex(m => m.id === mtgId);
             if (meetingIndex < 0) return;
@@ -1134,12 +1173,17 @@
             renderAdminMeetingsList();
             populateMeetingDropdowns();
 
-            callServer('setMeetingActiveStatus', [mtgId, !!nextState], function(){}, function() {
+            try {
+                const saved = await callServerAsync('setMeetingActiveStatus', [mtgId, !!nextState]);
+                if (!saved) throw new Error('Meeting not found on server');
+                await refreshDbFromServer();
+            } catch (err) {
+                console.error('Failed to update meeting status:', err);
                 db.meetings[meetingIndex].isActive = !nextState;
                 renderAdminMeetingsList();
                 populateMeetingDropdowns();
                 showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถอัปเดตสถานะ Active/Inactive ได้');
-            });
+            }
         }
 
         function getMeetingById(mtgId) {
@@ -1189,7 +1233,7 @@
                 const oldFileId = meeting.agendaFileId || '';
                 const allowedRoles = getAllowedUploadRolesForMeeting(mtgId);
 
-                if (isGasRuntime() || isExternalApiReady()) {
+                if (true) {
                     callServer('uploadMeetingAgendaToDrive', [base64Data, file.name, mtgId, oldFileId, currentAdminRole, allowedRoles], function(result) {
                             if (result.success) {
                                 db.meetings[mtgIndex].agendaUrl = result.url;
