@@ -2384,6 +2384,149 @@
             }, 500);
         }
 
+        // Persistence-safe overrides for admin meeting actions.
+        async function handleSaveMeeting(e) {
+            e.preventDefault();
+            if (!guardManagePermission()) return;
+
+            const id = document.getElementById('mtg-id').value;
+            const meeting = {
+                id: id ? id : "M" + Date.now().toString().slice(-9),
+                topic: document.getElementById('mtg-topic').value,
+                date: document.getElementById('mtg-date').value,
+                time: document.getElementById('mtg-time').value,
+                location: document.getElementById('mtg-location').value,
+                onlineLink: document.getElementById('mtg-online-link').value,
+                agendaUrl: '',
+                agendaName: '',
+                agendaFileId: '',
+                hybridEnabled: document.getElementById('mtg-hybrid-enabled').checked,
+                uploadRoles: (document.getElementById('mtg-upload-roles').value || 'admin').trim(),
+                isActive: true
+            };
+
+            if (id) {
+                const oldMeeting = db.meetings.find(m => m.id === id);
+                if (oldMeeting) {
+                    meeting.agendaUrl = oldMeeting.agendaUrl || '';
+                    meeting.agendaName = oldMeeting.agendaName || '';
+                    meeting.agendaFileId = oldMeeting.agendaFileId || '';
+                    meeting.isActive = oldMeeting.isActive !== false;
+                }
+            }
+
+            setGlobalLoading(true, 'Saving meeting...');
+            try {
+                const saved = await callServerAsync('saveMeetingToServer', [meeting]);
+                if (!saved) throw new Error('saveMeetingToServer returned false');
+                await refreshDbFromServer();
+                resetMeetingForm();
+                showAlert('success', 'Saved', 'Meeting data has been saved to server.');
+            } catch (err) {
+                console.error('Failed to save meeting:', err);
+                showAlert('error', 'Save failed', 'Unable to save meeting data to server.');
+            } finally {
+                setGlobalLoading(false);
+            }
+        }
+
+        async function toggleMeetingActive(mtgId, nextState) {
+            if (!guardManagePermission()) return;
+
+            const meetingIndex = db.meetings.findIndex(m => m.id === mtgId);
+            if (meetingIndex < 0) return;
+
+            const previousState = db.meetings[meetingIndex].isActive !== false;
+            db.meetings[meetingIndex].isActive = !!nextState;
+            renderAdminMeetingsList();
+            populateMeetingDropdowns();
+
+            setGlobalLoading(true, 'Saving status...');
+            try {
+                const saved = await callServerAsync('setMeetingActiveStatus', [mtgId, !!nextState]);
+                if (!saved) throw new Error('Meeting not found on server');
+                await refreshDbFromServer();
+            } catch (err) {
+                console.error('Failed to update meeting status:', err);
+                db.meetings[meetingIndex].isActive = previousState;
+                renderAdminMeetingsList();
+                populateMeetingDropdowns();
+                showAlert('error', 'Save failed', 'Unable to update Active/Inactive status on server.');
+            } finally {
+                setGlobalLoading(false);
+            }
+        }
+
+        function handleAgendaUpload(e) {
+            if (!guardManagePermission()) return;
+
+            const file = e.target.files[0];
+            if (!file || !currentAgendaTargetMeetingId) return;
+
+            const mtgId = currentAgendaTargetMeetingId;
+            const mtgIndex = db.meetings.findIndex(m => m.id === mtgId);
+            if (mtgIndex < 0) return;
+
+            setGlobalLoading(true, 'Uploading agenda...');
+            const reader = new FileReader();
+            reader.onload = async function(ev) {
+                try {
+                    const base64Data = ev.target.result.split(',')[1];
+                    const meeting = db.meetings[mtgIndex];
+                    const oldFileId = meeting.agendaFileId || '';
+                    const allowedRoles = getAllowedUploadRolesForMeeting(mtgId);
+
+                    const uploadResult = await callServerAsync('uploadMeetingAgendaToDrive', [
+                        base64Data,
+                        file.name,
+                        mtgId,
+                        oldFileId,
+                        currentAdminRole,
+                        allowedRoles
+                    ]);
+
+                    if (!uploadResult || !uploadResult.success) {
+                        throw new Error((uploadResult && uploadResult.error) || 'Agenda upload failed');
+                    }
+
+                    const saved = await callServerAsync('saveMeetingAgendaToServer', [
+                        mtgId,
+                        uploadResult.url,
+                        uploadResult.name,
+                        uploadResult.fileId
+                    ]);
+
+                    if (!saved) throw new Error('Meeting not found while saving agenda metadata');
+
+                    await refreshDbFromServer();
+                    showAlert('success', 'Uploaded', 'Agenda file has been saved to server.');
+                } catch (err) {
+                    console.error('Failed to upload agenda:', err);
+                    showAlert('error', 'Upload failed', 'Unable to upload and save agenda file.');
+                } finally {
+                    setGlobalLoading(false);
+                    currentAgendaTargetMeetingId = null;
+                    document.getElementById('agenda-file-input').value = '';
+                }
+            };
+            reader.onerror = function() {
+                setGlobalLoading(false);
+                currentAgendaTargetMeetingId = null;
+                document.getElementById('agenda-file-input').value = '';
+                showAlert('error', 'Read failed', 'Unable to read selected file.');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function setGlobalLoading(isLoading, text) {
+            const loader = document.getElementById('global-loader');
+            if (!loader) return;
+            const title = loader.querySelector('h2');
+            if (title && text) title.innerText = text;
+            loader.classList.toggle('hidden', !isLoading);
+            loader.style.opacity = isLoading ? '1' : '0';
+        }
+
         // Utils
         function formatDateThai(dateStr) {
             if(!dateStr) return "";
