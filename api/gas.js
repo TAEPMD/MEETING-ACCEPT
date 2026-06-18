@@ -41,27 +41,55 @@ export default async function handler(req, res) {
       return;
     }
 
-    const form = new URLSearchParams();
-    form.set('action', action);
-    form.set('payload', JSON.stringify(payload));
+    async function requestGas(method) {
+      if (method === 'GET') {
+        const url = new URL(gasUrl);
+        url.searchParams.set('action', action);
+        url.searchParams.set('payload', JSON.stringify(payload));
+        return fetch(url.toString(), { method: 'GET' });
+      }
 
-    const gasResp = await fetch(gasUrl, {
-      method: 'POST',
-      body: form
-    });
+      const form = new URLSearchParams();
+      form.set('action', action);
+      form.set('payload', JSON.stringify(payload));
+      return fetch(gasUrl, {
+        method: 'POST',
+        body: form
+      });
+    }
 
-    const text = await gasResp.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
+    async function parseGasResponse(resp) {
+      const text = await resp.text();
+      try {
+        return { data: JSON.parse(text), text };
+      } catch (e) {
+        return { data: null, text };
+      }
+    }
+
+    let gasResp = await requestGas('POST');
+    let parsed = await parseGasResponse(gasResp);
+    let data = parsed.data;
+
+    if (!data) {
+      const trimmedPost = String(parsed.text || '').trim();
+      const htmlLikePost = /^<!doctype html|^<html|<body/i.test(trimmedPost);
+      if (htmlLikePost) {
+        gasResp = await requestGas('GET');
+        parsed = await parseGasResponse(gasResp);
+        data = parsed.data;
+      }
+    }
+
+    if (!data) {
+      const text = parsed.text;
       const trimmed = String(text || '').trim();
       const preview = trimmed.slice(0, 240);
       const htmlLike = /^<!doctype html|^<html|<body/i.test(trimmed);
       data = {
         success: false,
         error: htmlLike
-          ? 'Invalid JSON from GAS (received HTML). Check GAS deploy access and /exec URL'
+          ? 'Invalid JSON from GAS (received HTML). Check GAS deploy access, latest deployment, and /exec URL'
           : 'Invalid JSON from GAS',
         raw: preview
       };
