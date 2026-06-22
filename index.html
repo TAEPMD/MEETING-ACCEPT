@@ -41,6 +41,8 @@
         .segmented-control { display: flex; background-color: #E5E5EA; border-radius: 9px; padding: 2px; }
         .segmented-control button { flex: 1; padding: 6px 12px; border-radius: 7px; font-size: 14px; font-weight: 500; color: #1D1D1F; transition: all 0.2s ease; white-space: nowrap; }
         .segmented-control button.active { background-color: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); }
+        .notification-badge { min-width: 1.35rem; height: 1.35rem; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #FF3B30; color: #FFFFFF; font-size: 11px; font-weight: 700; line-height: 1; box-shadow: 0 0 0 2px #FFFFFF; }
+        .notification-badge.hidden { display: none; }
 
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -149,6 +151,23 @@
                             </select>
                             <span id="admin-role-badge" class="text-[10px] bg-apple-gray px-2 py-0.5 rounded-full text-apple-muted">Role</span>
                         </div>
+                        <div class="relative w-full sm:w-auto">
+                            <button type="button" onclick="toggleAdminNotifications()" class="relative flex items-center justify-center gap-2 bg-apple-surface border border-apple-border rounded-full px-4 py-2 w-full sm:w-auto text-sm text-apple-text hover:bg-apple-gray transition-colors">
+                                <i class="fa-solid fa-bell text-apple-muted"></i>
+                                <span>แจ้งเตือน</span>
+                                <span id="admin-notification-count" class="notification-badge hidden absolute -top-2 -right-1">0</span>
+                            </button>
+                            <div id="admin-notification-panel" class="hidden absolute right-0 mt-2 w-[min(92vw,420px)] bg-white border border-apple-border rounded-3xl shadow-apple-hover z-50 overflow-hidden">
+                                <div class="px-5 py-4 border-b border-apple-border flex items-center justify-between gap-3">
+                                    <div>
+                                        <h3 class="font-heading font-semibold text-base">การตอบรับใหม่</h3>
+                                        <p class="text-xs text-apple-muted">ชื่อการประชุม ชื่อผู้ตอบ และสถานะการเข้าร่วม</p>
+                                    </div>
+                                    <button type="button" onclick="markAdminNotificationsRead()" class="text-xs font-semibold bg-apple-gray hover:bg-apple-border text-apple-text px-3 py-1.5 rounded-full transition-colors whitespace-nowrap">อ่านแล้ว</button>
+                                </div>
+                                <div id="admin-notification-list" class="max-h-96 overflow-y-auto p-3 space-y-2"></div>
+                            </div>
+                        </div>
                         <div class="flex items-center gap-2 bg-apple-surface border border-apple-border rounded-full px-3 py-1.5 w-full sm:w-auto">
                             <i class="fa-solid fa-filter text-apple-muted text-sm"></i>
                             <select id="meeting-status-filter" onchange="renderAdminMeetingsList()" class="bg-transparent text-sm text-apple-text focus:outline-none">
@@ -160,7 +179,7 @@
                         <div class="segmented-control flex-grow sm:flex-grow-0 w-full overflow-x-auto">
                             <button id="tab-meetings" onclick="switchAdminTab('meetings')" class="active">การประชุม</button>
                             <button id="tab-attendees" onclick="switchAdminTab('attendees')">รายชื่อ & เอกสาร</button>
-                            <button id="tab-history" onclick="switchAdminTab('history')">ประวัติ</button>
+                            <button id="tab-history" onclick="switchAdminTab('history')" class="relative">ประวัติ<span id="history-unread-badge" class="notification-badge hidden absolute -top-2 -right-2">0</span></button>
                             <button id="tab-users" onclick="switchAdminTab('users')">User Control</button>
                         </div>
                         <button onclick="adminLogout()" class="w-10 h-10 rounded-full bg-apple-surface border border-apple-border text-apple-muted hover:text-ems-red hover:bg-red-50 transition-colors flex items-center justify-center shrink-0 self-end sm:self-auto" title="ออกจากระบบ Admin">
@@ -587,6 +606,8 @@
         let PIN_HASH_READY = false;
         let currentAdminRole = sessionStorage.getItem('adminRole') || 'admin';
         let currentAdminUserId = sessionStorage.getItem('adminUserId') || '';
+        const NOTIFICATION_SEEN_KEY = 'niemRsvpSeenResponseIds';
+        let adminNotificationPollTimer = null;
 
         // ตั้งค่า URL ของ Apps Script Web App สำหรับโหมดที่ deploy หน้าเว็บบน Vercel
         // ตัวอย่าง: https://script.google.com/macros/s/AKfycb.../exec
@@ -804,12 +825,175 @@
         }
 
         async function refreshDbFromServer() {
+            const unreadBeforeRefresh = new Set(getUnreadResponses().map(r => getResponseNotificationId(r)));
             const serverData = await callServerAsync('getInitialData', []);
             db = serverData || { meetings: [], attendees: {}, responses: [], users: [] };
             await refreshRolePinHashesFromDb();
             renderAdminMeetingsList();
             populateMeetingDropdowns();
+            renderAdminNotifications();
+
+            const newlyUnread = getUnreadResponses().filter(r => !unreadBeforeRefresh.has(getResponseNotificationId(r)));
+            if (newlyUnread.length > 0) {
+                showAdminResponseNotificationToast(newlyUnread[0]);
+            }
             return db;
+        }
+
+        function getResponseNotificationId(response) {
+            const id = String(response && response.id || '').trim();
+            const timestamp = String(response && response.timestamp || '').trim();
+            if (id || timestamp) return `${id}|${timestamp}`;
+            return `${response && response.meetingId || ''}|${response && response.name || ''}|${response && response.status || ''}`;
+        }
+
+        function readSeenResponseIds() {
+            try {
+                const raw = localStorage.getItem(NOTIFICATION_SEEN_KEY);
+                const parsed = raw ? JSON.parse(raw) : [];
+                return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
+            } catch (err) {
+                return new Set();
+            }
+        }
+
+        function saveSeenResponseIds(seenIds) {
+            const ids = Array.from(seenIds || []);
+            try {
+                localStorage.setItem(NOTIFICATION_SEEN_KEY, JSON.stringify(ids));
+            } catch (err) {
+                console.warn('Unable to persist notification read state:', err);
+            }
+        }
+
+        function getSortedResponsesLatestFirst(responses) {
+            return [...(responses || [])].sort((a, b) => parseDateStr(b.timestamp) - parseDateStr(a.timestamp));
+        }
+
+        function getUnreadResponses() {
+            const seen = readSeenResponseIds();
+            return getSortedResponsesLatestFirst(db.responses || []).filter(r => !seen.has(getResponseNotificationId(r)));
+        }
+
+        function getResponseStatusLabel(response) {
+            if (!response) return '-';
+            if (response.status === 'attend') {
+                const mode = response.attendanceMode
+                    ? ` (${String(response.attendanceMode).toLowerCase() === 'online' ? 'Online' : 'Onsite'})`
+                    : '';
+                return `เข้าร่วม${mode}`;
+            }
+            return 'ไม่เข้าร่วม';
+        }
+
+        function getResponseStatusBadgeClass(response) {
+            return response && response.status === 'attend'
+                ? 'bg-green-100 text-ems-green border-green-200'
+                : 'bg-red-100 text-ems-red border-red-200';
+        }
+
+        function escapeHtml(value) {
+            return String(value || '').replace(/[&<>"']/g, ch => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[ch]));
+        }
+
+        function renderAdminNotifications() {
+            const unreadResponses = getUnreadResponses();
+            const unreadCount = unreadResponses.length;
+            const countBadge = document.getElementById('admin-notification-count');
+            const historyBadge = document.getElementById('history-unread-badge');
+            const list = document.getElementById('admin-notification-list');
+
+            [countBadge, historyBadge].forEach(el => {
+                if (!el) return;
+                el.innerText = unreadCount > 99 ? '99+' : String(unreadCount);
+                el.classList.toggle('hidden', unreadCount === 0);
+            });
+
+            if (!list) return;
+            if (unreadCount === 0) {
+                list.innerHTML = '<div class="text-center py-8 text-sm text-apple-muted">ยังไม่มีการตอบรับใหม่</div>';
+                return;
+            }
+
+            list.innerHTML = '';
+            unreadResponses.slice(0, 12).forEach(response => {
+                const statusLabel = getResponseStatusLabel(response);
+                const statusClass = getResponseStatusBadgeClass(response);
+                const item = `
+                    <div class="rounded-2xl border border-apple-border bg-apple-gray/60 p-3">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <p class="text-xs text-apple-muted mb-1">ชื่อการประชุม</p>
+                                <p class="font-heading font-semibold text-sm text-apple-text truncate" title="${escapeHtml(response.topic || '-')}">${escapeHtml(response.topic || '-')}</p>
+                            </div>
+                            <span class="shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-full border ${statusClass}">${escapeHtml(statusLabel)}</span>
+                        </div>
+                        <div class="mt-3 flex items-center justify-between gap-3 text-xs">
+                            <span class="text-apple-muted"><i class="fa-solid fa-user mr-1"></i>${escapeHtml(response.name || '-')}</span>
+                            <span class="text-apple-muted whitespace-nowrap">${escapeHtml(response.timestamp || '')}</span>
+                        </div>
+                    </div>`;
+                list.insertAdjacentHTML('beforeend', item);
+            });
+        }
+
+        function markAdminNotificationsRead() {
+            saveSeenResponseIds(new Set((db.responses || []).map(r => getResponseNotificationId(r))));
+            renderAdminNotifications();
+        }
+
+        function toggleAdminNotifications() {
+            const panel = document.getElementById('admin-notification-panel');
+            if (!panel) return;
+            renderAdminNotifications();
+            panel.classList.toggle('hidden');
+        }
+
+        function showAdminResponseNotificationToast(response) {
+            const adminView = document.getElementById('view-admin-dashboard');
+            if (!adminView || adminView.classList.contains('hidden') || sessionStorage.getItem('isAdminAuthed') !== 'true') return;
+            if (typeof Swal === 'undefined') return;
+
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: response.status === 'attend' ? 'success' : 'info',
+                title: 'มีการตอบรับใหม่',
+                html: `<div class="text-left text-xs leading-relaxed">
+                    <div><b>ประชุม:</b> ${escapeHtml(response.topic || '-')}</div>
+                    <div><b>ผู้ตอบ:</b> ${escapeHtml(response.name || '-')}</div>
+                    <div><b>สถานะ:</b> ${escapeHtml(getResponseStatusLabel(response))}</div>
+                </div>`,
+                showConfirmButton: false,
+                timer: 5500,
+                timerProgressBar: true,
+                customClass: { popup: 'rounded-2xl font-heading shadow-apple mt-4' }
+            });
+        }
+
+        function startAdminNotificationPolling() {
+            if (adminNotificationPollTimer) return;
+            adminNotificationPollTimer = setInterval(() => {
+                if (sessionStorage.getItem('isAdminAuthed') !== 'true') return;
+                const adminView = document.getElementById('view-admin-dashboard');
+                if (!adminView || adminView.classList.contains('hidden')) return;
+
+                refreshDbFromServer().catch(err => {
+                    console.error('Failed to refresh admin notifications:', err);
+                });
+            }, 30000);
+        }
+
+        function stopAdminNotificationPolling() {
+            if (!adminNotificationPollTimer) return;
+            clearInterval(adminNotificationPollTimer);
+            adminNotificationPollTimer = null;
         }
 
         // --- Hashing ---
@@ -910,6 +1094,7 @@
                             renderAdminMeetingsList();
                             renderUsersList();
                             populateMeetingDropdowns();
+                            renderAdminNotifications();
                         }, 300);
                     });
                 }, function(err) {
@@ -983,6 +1168,7 @@
         }
 
         function adminLogout() {
+            stopAdminNotificationPolling();
             sessionStorage.removeItem('isAdminAuthed');
             sessionStorage.removeItem('adminRole');
             sessionStorage.removeItem('adminUserId');
@@ -999,7 +1185,12 @@
         function showView(viewId) {
             document.querySelectorAll('.app-view').forEach(el => el.classList.add('hidden'));
             document.getElementById('view-' + viewId).classList.remove('hidden');
-            if(viewId === 'admin-dashboard') { updateAdminRoleBadge(); renderAdminMeetingsList(); renderUsersList(); switchAdminTab('meetings'); applyAdminRolePermissions(); }
+            if (viewId !== 'admin-dashboard') {
+                stopAdminNotificationPolling();
+                const panel = document.getElementById('admin-notification-panel');
+                if (panel) panel.classList.add('hidden');
+            }
+            if(viewId === 'admin-dashboard') { updateAdminRoleBadge(); renderAdminMeetingsList(); renderUsersList(); renderAdminNotifications(); switchAdminTab('meetings'); applyAdminRolePermissions(); startAdminNotificationPolling(); }
             if(viewId === 'user-dashboard') {
                 populateMeetingDropdowns(); document.getElementById('user-response-form').classList.add('hidden');
                 document.getElementById('user-select-meeting').value = ""; document.getElementById('invitation-download-section').classList.add('hidden');
@@ -1015,7 +1206,7 @@
             document.querySelectorAll('.segmented-control button').forEach(el => el.classList.remove('active'));
             document.getElementById('admin-tab-' + tab).classList.remove('hidden'); document.getElementById('tab-' + tab).classList.add('active');
             if(tab === 'attendees') populateMeetingDropdowns();
-            if(tab === 'history') { populateMeetingDropdowns(); renderHistory(); }
+            if(tab === 'history') { populateMeetingDropdowns(); renderHistory(); markAdminNotificationsRead(); }
             if(tab === 'users') { renderUsersList(); resetUserForm(); }
         }
 
@@ -1886,11 +2077,13 @@
             const oldResponses = [...db.responses];
             db.responses = db.responses.filter(r => r.id !== responseId);
             renderHistory();
+            renderAdminNotifications();
 
             callServer('deleteResponseFromServer', [String(responseId || '').trim()], function(serverOk) {
                 if (!(serverOk === true || serverOk === 'true' || serverOk === 1)) {
                     db.responses = oldResponses;
                     renderHistory();
+                    renderAdminNotifications();
                     showAlert('error', 'ลบไม่สำเร็จ', 'ไม่พบรายการที่ต้องการลบบนฐานข้อมูล');
                     return;
                 }
@@ -1898,6 +2091,7 @@
             }, function(err) {
                 db.responses = oldResponses;
                 renderHistory();
+                renderAdminNotifications();
                 showAlert('error', 'ลบไม่สำเร็จ', 'ไม่สามารถเชื่อมต่อกับ Server ได้: ' + (err || 'Unknown error'));
             });
         }
@@ -2299,6 +2493,8 @@
             const existingIndex = db.responses.findIndex(r => r.id === data.id);
             if (existingIndex > -1) db.responses[existingIndex] = data;
             else db.responses.push(data);
+            renderAdminNotifications();
+            showAdminResponseNotificationToast(data);
 
             callServer('saveResponseToServer', [data], function(){}, function(err) {
                 console.error('Failed to save response:', err);
