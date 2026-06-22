@@ -43,6 +43,30 @@
         .segmented-control button.active { background-color: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); }
         .notification-badge { min-width: 1.35rem; height: 1.35rem; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #FF3B30; color: #FFFFFF; font-size: 11px; font-weight: 700; line-height: 1; box-shadow: 0 0 0 2px #FFFFFF; }
         .notification-badge.hidden { display: none; }
+        .admin-dashboard-header { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, auto); gap: 16px 24px; align-items: center; }
+        .admin-heading { display: flex; align-items: center; gap: 14px; min-width: 0; }
+        .admin-heading-icon { width: 52px; height: 52px; border-radius: 18px; display: inline-flex; align-items: center; justify-content: center; background: #EDFF21; color: #1D1D1F; box-shadow: 0 8px 24px rgba(237, 255, 33, 0.28); flex: 0 0 auto; }
+        .admin-heading-title { font-size: clamp(1.5rem, 1.2rem + 0.9vw, 2rem); line-height: 1.2; white-space: nowrap; }
+        .admin-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; min-width: 0; }
+        .admin-control-pill { min-height: 44px; }
+        .admin-tabs-row { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+        .admin-tabs-row .segmented-control { width: min(100%, 620px); }
+        .admin-logout-btn { width: 44px; height: 44px; }
+
+        @media (max-width: 1024px) {
+            .admin-dashboard-header { grid-template-columns: 1fr; }
+            .admin-toolbar, .admin-tabs-row { justify-content: flex-start; }
+            .admin-tabs-row .segmented-control { width: 100%; }
+        }
+
+        @media (max-width: 640px) {
+            .admin-heading { align-items: flex-start; }
+            .admin-heading-icon { width: 46px; height: 46px; border-radius: 16px; }
+            .admin-heading-title { white-space: normal; }
+            .admin-toolbar { display: grid; grid-template-columns: 1fr; width: 100%; }
+            .admin-control-pill, .admin-toolbar > .relative, .admin-toolbar > button, .admin-toolbar > .relative > button { width: 100%; }
+            .admin-logout-btn { width: 100%; border-radius: 999px; }
+        }
 
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -133,16 +157,19 @@
 
             <!-- 2. Admin Dashboard View -->
             <div id="view-admin-dashboard" class="app-view hidden">
-                <div class="mb-8 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                    <div>
-                        <h2 class="text-2xl font-heading font-bold flex items-center gap-2">
-                            <i class="fa-solid fa-unlock-keyhole text-ems-green text-xl"></i> การจัดการระบบ
-                        </h2>
-                        <p class="text-apple-muted text-sm">ส่วนสำหรับผู้ดูแลระบบ (Admin)</p>
+                <div class="mb-8 admin-dashboard-header">
+                    <div class="admin-heading">
+                        <div class="admin-heading-icon">
+                            <i class="fa-solid fa-unlock-keyhole text-xl"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <h2 class="admin-heading-title font-heading font-bold text-apple-text">การจัดการระบบ</h2>
+                            <p class="text-apple-muted text-sm mt-1">ส่วนสำหรับผู้ดูแลระบบ (Admin)</p>
+                        </div>
                     </div>
                     
-                    <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full lg:w-auto">
-                        <div class="flex items-center gap-2 bg-apple-surface border border-apple-border rounded-full px-3 py-1.5 w-full sm:w-auto">
+                    <div class="admin-toolbar">
+                        <div class="admin-control-pill flex items-center gap-2 bg-apple-surface border border-apple-border rounded-full px-4 py-2 w-full sm:w-auto">
                             <i class="fa-solid fa-user-shield text-apple-muted text-sm"></i>
                             <select id="admin-role" onchange="handleAdminRoleChange()" class="bg-transparent text-sm text-apple-text focus:outline-none">
                                 <option value="admin">ADMIN</option>
@@ -152,7 +179,7 @@
                             <span id="admin-role-badge" class="text-[10px] bg-apple-gray px-2 py-0.5 rounded-full text-apple-muted">Role</span>
                         </div>
                         <div class="relative w-full sm:w-auto">
-                            <button type="button" onclick="toggleAdminNotifications()" class="relative flex items-center justify-center gap-2 bg-apple-surface border border-apple-border rounded-full px-4 py-2 w-full sm:w-auto text-sm text-apple-text hover:bg-apple-gray transition-colors">
+                            <button type="button" onclick="toggleAdminNotifications()" class="admin-control-pill relative flex items-center justify-center gap-2 bg-apple-surface border border-apple-border rounded-full px-4 py-2 w-full sm:w-auto text-sm text-apple-text hover:bg-apple-gray transition-colors">
                                 <i class="fa-solid fa-bell text-apple-muted"></i>
                                 <span>แจ้งเตือน</span>
                                 <span id="admin-notification-count" class="notification-badge hidden absolute -top-2 -right-1">0</span>
@@ -168,7 +195,7 @@
                                 <div id="admin-notification-list" class="max-h-96 overflow-y-auto p-3 space-y-2"></div>
                             </div>
                         </div>
-                        <div class="flex items-center gap-2 bg-apple-surface border border-apple-border rounded-full px-3 py-1.5 w-full sm:w-auto">
+                        <div class="admin-control-pill flex items-center gap-2 bg-apple-surface border border-apple-border rounded-full px-4 py-2 w-full sm:w-auto">
                             <i class="fa-solid fa-filter text-apple-muted text-sm"></i>
                             <select id="meeting-status-filter" onchange="renderAdminMeetingsList()" class="bg-transparent text-sm text-apple-text focus:outline-none">
                                 <option value="all">ทั้งหมด</option>
@@ -176,15 +203,18 @@
                                 <option value="inactive">Inactive</option>
                             </select>
                         </div>
+                        <button onclick="adminLogout()" class="admin-logout-btn bg-apple-surface border border-apple-border text-apple-muted hover:text-ems-red hover:bg-red-50 transition-colors flex items-center justify-center shrink-0 self-end sm:self-auto rounded-full" title="ออกจากระบบ Admin">
+                            <i class="fa-solid fa-right-from-bracket"></i>
+                        </button>
+                    </div>
+
+                    <div class="admin-tabs-row">
                         <div class="segmented-control flex-grow sm:flex-grow-0 w-full overflow-x-auto">
                             <button id="tab-meetings" onclick="switchAdminTab('meetings')" class="active">การประชุม</button>
                             <button id="tab-attendees" onclick="switchAdminTab('attendees')">รายชื่อ & เอกสาร</button>
                             <button id="tab-history" onclick="switchAdminTab('history')" class="relative">ประวัติ<span id="history-unread-badge" class="notification-badge hidden absolute -top-2 -right-2">0</span></button>
                             <button id="tab-users" onclick="switchAdminTab('users')">User Control</button>
                         </div>
-                        <button onclick="adminLogout()" class="w-10 h-10 rounded-full bg-apple-surface border border-apple-border text-apple-muted hover:text-ems-red hover:bg-red-50 transition-colors flex items-center justify-center shrink-0 self-end sm:self-auto" title="ออกจากระบบ Admin">
-                            <i class="fa-solid fa-right-from-bracket"></i>
-                        </button>
                     </div>
                 </div>
 
