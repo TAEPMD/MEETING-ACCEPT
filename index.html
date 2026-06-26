@@ -12,6 +12,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- SweetAlert2 -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- QRCode.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
     <script>
         tailwind.config = {
@@ -327,8 +329,9 @@
                                     <h3 class="font-heading font-semibold text-lg">รายชื่อผู้มีสิทธิ์เข้าร่วม</h3>
                                     <p class="text-sm text-apple-muted">รวม <span id="attendee-count" class="font-bold text-apple-text">0</span> คน</p>
                                 </div>
-                                <div class="flex gap-2 w-full sm:w-auto">
+                                <div class="flex gap-2 w-full sm:w-auto flex-wrap">
                                     <button id="save-attendees-btn" onclick="saveAttendeesList()" class="flex-1 sm:flex-none text-sm bg-ems-yellow text-ems-dark px-4 py-2 rounded-full font-semibold hover:scale-105 transition-transform shadow-sm"><i class="fa-solid fa-floppy-disk mr-1"></i> Save</button>
+                                    <button onclick="printAllQRCodes(document.getElementById('admin-select-meeting').value)" class="flex-1 sm:flex-none text-sm bg-apple-text text-white px-4 py-2 rounded-full font-semibold hover:scale-105 transition-transform shadow-sm"><i class="fa-solid fa-qrcode mr-1"></i> QR ทั้งหมด</button>
                                     <button onclick="clearAllAttendees()" class="flex-1 sm:flex-none text-sm text-ems-red bg-red-50 px-3 py-1.5 rounded-full hover:bg-red-100 transition-colors"><i class="fa-solid fa-trash-can mr-1"></i> ล้างทั้งหมด</button>
                                 </div>
                             </div>
@@ -1120,11 +1123,16 @@
                         document.getElementById('global-loader').style.opacity = '0';
                         setTimeout(() => {
                             document.getElementById('global-loader').classList.add('hidden');
-                            document.getElementById('view-role-selection').classList.remove('hidden');
                             renderAdminMeetingsList();
                             renderUsersList();
                             populateMeetingDropdowns();
                             renderAdminNotifications();
+                            const qrRef = new URLSearchParams(window.location.search).get('ref');
+                            if (qrRef) {
+                                autoFillFromQRRef(qrRef);
+                            } else {
+                                document.getElementById('view-role-selection').classList.remove('hidden');
+                            }
                         }, 300);
                     });
                 }, function(err) {
@@ -1601,6 +1609,7 @@
                         <div class="flex items-center gap-3"><span class="text-apple-muted w-5 text-right text-sm">${idx + 1}.</span><span class="font-medium">${user.name}</span></div>
                         <div class="flex items-center gap-3 ml-8 sm:ml-0">
                             ${fileUI}
+                            <button onclick="showQRCode('${mtgId}', '${userNameSafe}')" class="text-apple-muted hover:text-ems-dark hover:bg-ems-yellow/20 p-1.5 rounded-full transition-colors" title="QR Code ส่วนบุคคล"><i class="fa-solid fa-qrcode text-sm"></i></button>
                             ${attendeeActions}
                         </div>
                     </li>`;
@@ -3118,6 +3127,232 @@
             return `${map.day}/${map.month}/${map.year} ${map.hour}:${map.minute}:${map.second}`;
         }
         function showAlert(icon, title, text) { Swal.fire({ icon, title, text, confirmButtonColor: '#1D1D1F', customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white' } }); }
+
+        // ================= QR CODE (รายบุคคล เพื่อความเป็นส่วนตัว) =================
+
+        function generateQRRef(mtgId, name) {
+            try {
+                return btoa(unescape(encodeURIComponent(mtgId + '||' + name)));
+            } catch (e) {
+                return btoa(mtgId + '||' + name);
+            }
+        }
+
+        function decodeQRRef(ref) {
+            try {
+                return decodeURIComponent(escape(atob(ref)));
+            } catch (e) {
+                return atob(ref);
+            }
+        }
+
+        function generateQRUrl(mtgId, name) {
+            const baseUrl = window.location.href.split('?')[0].split('#')[0];
+            return baseUrl + '?ref=' + generateQRRef(mtgId, name);
+        }
+
+        function showQRCode(mtgId, name) {
+            const url = generateQRUrl(mtgId, name);
+            const meeting = getMeetingById(mtgId);
+            const meetingTitle = meeting ? meeting.topic : mtgId;
+
+            Swal.fire({
+                title: 'QR Code ส่วนบุคคล',
+                html: `
+                    <div class="text-center">
+                        <p class="font-heading font-semibold text-apple-text mb-1">${escapeHtml(name)}</p>
+                        <p class="text-xs text-apple-muted mb-4 truncate">${escapeHtml(meetingTitle)}</p>
+                        <div id="swal-qr-container" class="flex justify-center mb-4 p-4 bg-white rounded-2xl border border-apple-border inline-block"></div>
+                        <p class="text-xs text-apple-muted mt-2">สแกน QR เพื่อเปิดฟอร์มตอบรับส่วนบุคคล</p>
+                        <p class="text-[10px] text-apple-muted mt-1 opacity-60">QR นี้ใช้ได้เฉพาะ ${escapeHtml(name)} เท่านั้น</p>
+                    </div>
+                `,
+                didOpen: () => {
+                    const container = document.getElementById('swal-qr-container');
+                    if (typeof QRCode !== 'undefined' && container) {
+                        new QRCode(container, {
+                            text: url,
+                            width: 200,
+                            height: 200,
+                            colorDark: '#1D1D1F',
+                            colorLight: '#FFFFFF',
+                            correctLevel: QRCode.CorrectLevel.M
+                        });
+                    } else if (container) {
+                        container.innerHTML = '<p class="text-sm text-apple-muted p-4">ไม่สามารถสร้าง QR Code ได้</p>';
+                    }
+                },
+                showCancelButton: true,
+                confirmButtonText: '<i class="fa-solid fa-download mr-1"></i> ดาวน์โหลด PNG',
+                cancelButtonText: 'ปิด',
+                confirmButtonColor: '#1D1D1F',
+                cancelButtonColor: '#E5E5EA',
+                customClass: {
+                    popup: 'rounded-3xl font-heading',
+                    confirmButton: 'rounded-full px-6 text-white',
+                    cancelButton: 'rounded-full px-6'
+                }
+            }).then(result => {
+                if (result.isConfirmed) {
+                    const canvas = document.querySelector('#swal-qr-container canvas');
+                    if (canvas) {
+                        const a = document.createElement('a');
+                        a.download = 'QR_' + name.replace(/\s+/g, '_') + '.png';
+                        a.href = canvas.toDataURL('image/png');
+                        a.click();
+                    }
+                }
+            });
+        }
+
+        function printAllQRCodes(mtgId) {
+            if (!mtgId) { showAlert('warning', 'ยังไม่ได้เลือกการประชุม', 'กรุณาเลือกการประชุมก่อนพิมพ์ QR Code'); return; }
+            const attendees = db.attendees[mtgId] || [];
+            if (!attendees.length) { showAlert('warning', 'ไม่มีรายชื่อ', 'กรุณาเพิ่มรายชื่อผู้เข้าร่วมก่อนสร้าง QR Code'); return; }
+
+            const meeting = getMeetingById(mtgId);
+            const meetingTitle = meeting ? meeting.topic : mtgId;
+            const meetingDate = meeting ? formatDateThai(meeting.date) : '';
+            const baseUrl = window.location.href.split('?')[0].split('#')[0];
+
+            const attendeesData = attendees.map(u => ({
+                name: u.name,
+                url: baseUrl + '?ref=' + generateQRRef(mtgId, u.name)
+            }));
+
+            const printWin = window.open('', '_blank', 'width=950,height=700');
+            if (!printWin) { showAlert('error', 'Popup ถูกบล็อก', 'กรุณาอนุญาต Popup สำหรับเว็บไซต์นี้แล้วลองใหม่'); return; }
+
+            printWin.document.write(`<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>QR Codes - ${meetingTitle}</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600&family=Prompt:wght@600&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Sarabun', sans-serif; background: #fff; padding: 16px; }
+.page-header { text-align: center; margin-bottom: 16px; border-bottom: 2px solid #1D1D1F; padding-bottom: 12px; }
+.page-header h1 { font-family: 'Prompt', sans-serif; font-size: 15px; font-weight: 600; }
+.page-header p { font-size: 11px; color: #666; margin-top: 4px; }
+.qr-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.qr-card { border: 1px solid #E5E5EA; border-radius: 12px; padding: 14px; text-align: center; page-break-inside: avoid; break-inside: avoid; background: #FAFAFA; }
+.qr-card .qr-wrap { display: flex; justify-content: center; margin-bottom: 8px; }
+.qr-card .name { font-family: 'Prompt', sans-serif; font-size: 11px; font-weight: 600; color: #1D1D1F; margin-top: 4px; line-height: 1.3; word-break: break-word; }
+.qr-card .hint { font-size: 9px; color: #86868B; margin-top: 3px; }
+.no-print { text-align: center; padding: 16px 0; }
+.print-btn { padding: 10px 28px; background: #1D1D1F; color: #fff; border: none; border-radius: 999px; font-size: 14px; cursor: pointer; font-family: 'Sarabun', sans-serif; }
+.print-btn:hover { background: #333; }
+@media print {
+    body { padding: 8px; }
+    @page { margin: 8mm; }
+    .no-print { display: none !important; }
+    .qr-card { border-color: #ccc; }
+}
+</style>
+</head>
+<body>
+<div class="page-header">
+    <h1>${meetingTitle}</h1>
+    <p>${meetingDate ? meetingDate + ' | ' : ''}QR Code ตอบรับการประชุม รายบุคคล | ${attendeesData.length} คน</p>
+</div>
+<div class="no-print">
+    <button class="print-btn" onclick="window.print()">🖨️ พิมพ์ / Save PDF</button>
+</div>
+<div class="qr-grid" id="qr-grid"></div>
+<script>
+var data = ${JSON.stringify(attendeesData)};
+data.forEach(function(u) {
+    var card = document.createElement('div');
+    card.className = 'qr-card';
+    var wrap = document.createElement('div');
+    wrap.className = 'qr-wrap';
+    var qrEl = document.createElement('div');
+    wrap.appendChild(qrEl);
+    var nameEl = document.createElement('p');
+    nameEl.className = 'name';
+    nameEl.textContent = u.name;
+    var hintEl = document.createElement('p');
+    hintEl.className = 'hint';
+    hintEl.textContent = 'สแกนเพื่อตอบรับ';
+    card.appendChild(wrap);
+    card.appendChild(nameEl);
+    card.appendChild(hintEl);
+    document.getElementById('qr-grid').appendChild(card);
+    new QRCode(qrEl, { text: u.url, width: 130, height: 130, colorDark: '#1D1D1F', colorLight: '#FFFFFF', correctLevel: QRCode.CorrectLevel.M });
+});
+<\/script>
+</body>
+</html>`);
+            printWin.document.close();
+        }
+
+        function autoFillFromQRRef(ref) {
+            try {
+                const decoded = decodeQRRef(ref);
+                const sepIdx = decoded.indexOf('||');
+                if (sepIdx < 0) { document.getElementById('view-role-selection').classList.remove('hidden'); return; }
+                const mtgId = decoded.substring(0, sepIdx);
+                const name = decoded.substring(sepIdx + 2);
+                if (!mtgId || !name) { document.getElementById('view-role-selection').classList.remove('hidden'); return; }
+
+                const meeting = getMeetingById(mtgId);
+                if (!meeting || meeting.isActive === false) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'ลิงก์ไม่พร้อมใช้งาน',
+                        text: 'การประชุมนี้ถูกปิดการรับตอบรับแล้ว กรุณาติดต่อผู้จัดงาน',
+                        confirmButtonColor: '#1D1D1F',
+                        customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white' }
+                    }).then(() => showView('role-selection'));
+                    return;
+                }
+
+                const attendee = (db.attendees[mtgId] || []).find(u => u.name === name);
+                if (!attendee) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'ไม่พบรายชื่อ',
+                        text: 'ไม่พบชื่อของคุณในรายการประชุมนี้ กรุณาติดต่อผู้จัดงาน',
+                        confirmButtonColor: '#1D1D1F',
+                        customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white' }
+                    }).then(() => showView('role-selection'));
+                    return;
+                }
+
+                showView('user-dashboard');
+                setTimeout(() => {
+                    const userMtgSelect = document.getElementById('user-select-meeting');
+                    if (userMtgSelect) {
+                        userMtgSelect.value = mtgId;
+                        handleUserMeetingSelect();
+                    }
+                    setTimeout(() => {
+                        const userNameSelect = document.getElementById('user-name');
+                        if (userNameSelect) {
+                            userNameSelect.value = name;
+                            handleUserNameSelect();
+                        }
+                        Swal.fire({
+                            toast: true,
+                            position: 'top',
+                            icon: 'info',
+                            title: `สวัสดี ${name}`,
+                            text: 'ระบบได้เลือกชื่อของคุณแล้ว กรุณาเลือกสถานะการเข้าร่วม',
+                            showConfirmButton: false,
+                            timer: 3000,
+                            timerProgressBar: true,
+                            customClass: { popup: 'rounded-2xl font-heading shadow-apple mt-4' }
+                        });
+                    }, 150);
+                }, 150);
+
+            } catch (e) {
+                console.error('Failed to decode QR ref:', e);
+                document.getElementById('view-role-selection').classList.remove('hidden');
+            }
+        }
     </script>
 </body>
 </html>
