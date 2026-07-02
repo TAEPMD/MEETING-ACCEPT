@@ -2,7 +2,8 @@
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#F5F5F7">
     <title>ระบบตอบรับการเข้าร่วมประชุม - สพฉ.</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -33,15 +34,64 @@
         }
     </script>
     <style>
-        body { background-color: #F5F5F7; color: #1D1D1F; -webkit-font-smoothing: antialiased; }
+        html { scroll-behavior: smooth; }
+        body { background-color: #F5F5F7; color: #1D1D1F; -webkit-font-smoothing: antialiased; overflow-wrap: break-word; }
         h1, h2, h3, h4, .font-heading { font-family: 'Prompt', sans-serif; }
+
+        /* Accessibility: visible focus ring for keyboard users */
+        :focus-visible { outline: 3px solid rgba(29, 29, 31, 0.35); outline-offset: 2px; border-radius: 8px; }
+        .apple-input:focus-visible { outline: none; }
+
+        /* Tactile press feedback on all buttons and clickable cards */
+        button:not(:disabled) { touch-action: manipulation; }
+        button:not(:disabled):active, [onclick].cursor-pointer:active { transform: scale(0.97); }
+        button, [onclick].cursor-pointer { transition: transform 0.15s ease, background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease; }
+
+        /* Comfortable touch targets on touch devices */
+        @media (pointer: coarse) {
+            nav button, .admin-tab-content button, .segmented-control button, form button { min-height: 40px; }
+            /* Inputs at 16px+ prevent iOS Safari from auto-zooming on focus */
+            input, select, textarea { font-size: 16px !important; }
+        }
+
+        /* Safe-area support for notched phones */
+        @supports (padding: env(safe-area-inset-left)) {
+            body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+            footer { padding-bottom: calc(1.5rem + env(safe-area-inset-bottom)); }
+        }
+
+        /* Responsive table scroll: momentum scrolling + edge fade hint */
+        .table-scroll { -webkit-overflow-scrolling: touch; scrollbar-width: thin; position: relative; }
+        .table-wrap { position: relative; }
+        @media (max-width: 767px) {
+            .table-wrap::after { content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 28px; pointer-events: none; background: linear-gradient(to left, rgba(255,255,255,0.95), rgba(255,255,255,0)); border-radius: 0 12px 12px 0; }
+            .table-swipe-hint { display: flex; }
+        }
+        .table-swipe-hint { display: none; align-items: center; gap: 6px; font-size: 11px; color: #86868B; margin-bottom: 8px; }
+
+        .no-scrollbar { scrollbar-width: none; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+
+        /* Attendance choice cards: color the icon when selected (peer-checked can't reach descendants) */
+        .choice-card .choice-icon { transition: background-color 0.25s ease, color 0.25s ease, transform 0.25s ease; }
+        .choice-yes input:checked ~ div .choice-icon { background-color: #34C759; color: #FFFFFF; transform: scale(1.05); }
+        .choice-no input:checked ~ div .choice-icon { background-color: #FF3B30; color: #FFFFFF; transform: scale(1.05); }
+        .choice-card:hover > div { border-color: #D1D1D6; }
+
+        /* Respect users who prefer reduced motion */
+        @media (prefers-reduced-motion: reduce) {
+            html { scroll-behavior: auto; }
+            *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+        }
         
-        .apple-input { background-color: #F2F2F7; border: 1px solid transparent; border-radius: 12px; padding: 12px 16px; width: 100%; transition: all 0.2s ease; color: #1D1D1F; }
+        .apple-input { background-color: #F2F2F7; border: 1px solid transparent; border-radius: 12px; padding: 12px 16px; width: 100%; min-height: 48px; transition: all 0.2s ease; color: #1D1D1F; }
         .apple-input:focus { background-color: #FFFFFF; border-color: #EDFF21; outline: none; box-shadow: 0 0 0 3px rgba(237, 255, 33, 0.3); }
+        /* Consistent rendering of native date/time pickers across iOS/Android */
+        input[type="date"].apple-input, input[type="time"].apple-input { -webkit-appearance: none; appearance: none; }
         
         select.apple-input { appearance: none; background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2386868B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e"); background-repeat: no-repeat; background-position: right 12px center; background-size: 16px; padding-right: 40px; }
-        .segmented-control { display: flex; background-color: #E5E5EA; border-radius: 9px; padding: 2px; }
-        .segmented-control button { flex: 1; padding: 6px 12px; border-radius: 7px; font-size: 14px; font-weight: 500; color: #1D1D1F; transition: all 0.2s ease; white-space: nowrap; }
+        .segmented-control { display: flex; background-color: #E5E5EA; border-radius: 9px; padding: 2px; -webkit-overflow-scrolling: touch; }
+        .segmented-control button { flex: 1 0 auto; padding: 6px 12px; border-radius: 7px; font-size: 14px; font-weight: 500; color: #1D1D1F; transition: all 0.2s ease; white-space: nowrap; }
         .segmented-control button.active { background-color: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); }
         .notification-badge { min-width: 1.35rem; height: 1.35rem; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #FF3B30; color: #FFFFFF; font-size: 11px; font-weight: 700; line-height: 1; box-shadow: 0 0 0 2px #FFFFFF; }
         .notification-badge.hidden { display: none; }
@@ -96,9 +146,11 @@
 
     <!-- Global Loading Overlay -->
     <div id="global-loader" class="fixed inset-0 bg-white/90 backdrop-blur-md z-[100] flex flex-col items-center justify-center transition-opacity duration-300">
-        <i class="fa-solid fa-star-of-life fa-spin text-5xl text-ems-dark mb-4"></i>
-        <h2 class="font-heading font-bold text-xl text-apple-text">กำลังเชื่อมต่อฐานข้อมูล...</h2>
-        <p class="text-sm text-apple-muted">สถาบันการแพทย์ฉุกเฉินแห่งชาติ</p>
+        <div class="w-20 h-20 rounded-3xl bg-ems-yellow flex items-center justify-center shadow-apple mb-5">
+            <i class="fa-solid fa-star-of-life fa-spin text-3xl text-ems-dark"></i>
+        </div>
+        <h2 class="font-heading font-bold text-xl text-apple-text animate-pulse">กำลังเชื่อมต่อฐานข้อมูล...</h2>
+        <p class="text-sm text-apple-muted mt-1">สถาบันการแพทย์ฉุกเฉินแห่งชาติ</p>
     </div>
 
     <input type="file" id="temp-file-input" accept=".pdf" class="hidden" onchange="handleIndividualUpload(event)">
@@ -117,7 +169,7 @@
                     <p class="text-xs text-apple-muted">ระบบตอบรับการประชุม</p>
                 </div>
             </div>
-            <button onclick="showView('role-selection')" class="w-10 h-10 rounded-full hover:bg-apple-gray flex items-center justify-center text-apple-text transition-colors">
+            <button onclick="showView('role-selection')" aria-label="กลับหน้าหลัก" title="กลับหน้าหลัก" class="w-10 h-10 rounded-full hover:bg-apple-gray flex items-center justify-center text-apple-text transition-colors shrink-0">
                 <i class="fa-solid fa-house"></i>
             </button>
         </div>
@@ -128,13 +180,13 @@
             
             <!-- 1. Role Selection View -->
             <div id="view-role-selection" class="app-view space-y-8 hidden">
-                <div class="text-center mb-10">
-                    <h2 class="text-3xl font-heading font-bold text-apple-text mb-2">ยินดีต้อนรับ</h2>
+                <div class="text-center mb-8 sm:mb-10">
+                    <h2 class="text-3xl sm:text-4xl font-heading font-bold text-apple-text mb-2">ยินดีต้อนรับ</h2>
                     <p class="text-apple-muted">กรุณาเลือกรูปแบบการเข้าใช้งานระบบ</p>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
-                    <div onclick="showView('user-dashboard')" class="bg-apple-surface rounded-3xl p-8 shadow-apple hover:shadow-apple-hover transition-all duration-300 cursor-pointer flex flex-col items-center text-center group border border-transparent hover:border-apple-border">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 max-w-2xl mx-auto">
+                    <div onclick="showView('user-dashboard')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showView('user-dashboard')}" class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple hover:shadow-apple-hover transition-all duration-300 cursor-pointer flex flex-col items-center text-center group border border-transparent hover:border-apple-border">
                         <div class="w-20 h-20 bg-apple-gray rounded-full flex items-center justify-center text-3xl text-apple-text group-hover:scale-110 transition-transform duration-300 mb-6">
                             <i class="fa-solid fa-user-check"></i>
                         </div>
@@ -145,7 +197,7 @@
                         </div>
                     </div>
 
-                    <div onclick="verifyAdminAccess()" class="bg-apple-surface rounded-3xl p-8 shadow-apple hover:shadow-apple-hover transition-all duration-300 cursor-pointer flex flex-col items-center text-center group border border-transparent hover:border-apple-border">
+                    <div onclick="verifyAdminAccess()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();verifyAdminAccess()}" class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple hover:shadow-apple-hover transition-all duration-300 cursor-pointer flex flex-col items-center text-center group border border-transparent hover:border-apple-border">
                         <div class="w-20 h-20 bg-apple-gray rounded-full flex items-center justify-center text-3xl text-apple-text group-hover:scale-110 transition-transform duration-300 mb-6">
                             <i class="fa-solid fa-sliders"></i>
                         </div>
@@ -212,7 +264,7 @@
                     </div>
 
                     <div class="admin-tabs-row">
-                        <div class="segmented-control flex-grow sm:flex-grow-0 w-full overflow-x-auto">
+                        <div class="segmented-control flex-grow sm:flex-grow-0 w-full overflow-x-auto no-scrollbar">
                             <button id="tab-meetings" onclick="switchAdminTab('meetings')" class="active">การประชุม</button>
                             <button id="tab-attendees" onclick="switchAdminTab('attendees')">รายชื่อ & เอกสาร</button>
                             <button id="tab-history" onclick="switchAdminTab('history')" class="relative">ประวัติ<span id="history-unread-badge" class="notification-badge hidden absolute -top-2 -right-2">0</span></button>
@@ -276,8 +328,10 @@
 
                     <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple">
                         <h3 class="font-heading font-semibold text-lg mb-4">รายการทั้งหมด</h3>
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left border-collapse min-w-[600px]">
+                        <p class="table-swipe-hint"><i class="fa-solid fa-arrows-left-right"></i> ปัดซ้าย-ขวาเพื่อดูข้อมูลทั้งหมด</p>
+                        <div class="table-wrap">
+                        <div class="overflow-x-auto table-scroll">
+                            <table class="w-full text-left border-collapse min-w-[700px]">
                                 <thead>
                                     <tr class="text-apple-muted text-sm border-b border-apple-border">
                                         <th class="pb-3 font-normal">หัวข้อ</th>
@@ -291,6 +345,7 @@
                                 </thead>
                                 <tbody id="admin-meetings-list" class="divide-y divide-apple-border"></tbody>
                             </table>
+                        </div>
                         </div>
                     </div>
                 </div>
@@ -383,7 +438,9 @@
                             <h3 class="font-heading font-semibold text-lg">ข้อมูลการตอบรับ</h3>
                             <span class="bg-apple-gray text-apple-text text-xs font-bold px-3 py-1 rounded-full"><span id="history-count">0</span> รายการ</span>
                         </div>
-                        <div class="overflow-x-auto">
+                        <p class="table-swipe-hint"><i class="fa-solid fa-arrows-left-right"></i> ปัดซ้าย-ขวาเพื่อดูข้อมูลทั้งหมด</p>
+                        <div class="table-wrap">
+                        <div class="overflow-x-auto table-scroll">
                             <table class="w-full text-left border-collapse min-w-[800px]">
                                 <thead>
                                     <tr class="text-apple-muted text-sm border-b border-apple-border">
@@ -396,6 +453,7 @@
                                 </thead>
                                 <tbody id="admin-history-list" class="divide-y divide-apple-border text-sm"></tbody>
                             </table>
+                        </div>
                         </div>
                     </div>
                 </div>
@@ -440,7 +498,9 @@
                             <h3 class="font-heading font-semibold text-lg">รายการผู้ใช้งาน Admin Area</h3>
                             <span class="bg-apple-gray text-apple-text text-xs font-bold px-3 py-1 rounded-full"><span id="user-count">0</span> บัญชี</span>
                         </div>
-                        <div class="overflow-x-auto">
+                        <p class="table-swipe-hint"><i class="fa-solid fa-arrows-left-right"></i> ปัดซ้าย-ขวาเพื่อดูข้อมูลทั้งหมด</p>
+                        <div class="table-wrap">
+                        <div class="overflow-x-auto table-scroll">
                             <table class="w-full text-left border-collapse min-w-[700px]">
                                 <thead>
                                     <tr class="text-apple-muted text-sm border-b border-apple-border">
@@ -452,6 +512,7 @@
                                 </thead>
                                 <tbody id="admin-users-list" class="divide-y divide-apple-border text-sm"></tbody>
                             </table>
+                        </div>
                         </div>
                     </div>
                 </div>
@@ -561,20 +622,20 @@
                         <div id="attendance-section" class="hidden">
                             <label class="block font-heading font-medium mb-3 text-lg">3. สถานะการเข้าร่วม</label>
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <label class="relative cursor-pointer group">
+                                <label class="choice-card choice-yes relative cursor-pointer group">
                                     <input type="radio" name="attendance" value="attend" class="peer sr-only" onchange="toggleReasonField()" required>
-                                    <div class="p-5 border-2 border-apple-border rounded-2xl peer-checked:border-ems-green peer-checked:bg-green-50 transition-all text-center">
-                                        <div class="w-12 h-12 mx-auto rounded-full bg-apple-gray text-apple-muted peer-checked:bg-ems-green peer-checked:text-white flex items-center justify-center text-xl mb-3 transition-colors">
+                                    <div class="p-5 border-2 border-apple-border rounded-2xl peer-checked:border-ems-green peer-checked:bg-green-50 peer-checked:shadow-apple transition-all text-center">
+                                        <div class="choice-icon w-12 h-12 mx-auto rounded-full bg-apple-gray text-apple-muted flex items-center justify-center text-xl mb-3">
                                             <i class="fa-solid fa-check"></i>
                                         </div>
                                         <span class="font-heading font-medium block">ยินดีเข้าร่วม</span>
                                     </div>
                                 </label>
-                                
-                                <label class="relative cursor-pointer group">
+
+                                <label class="choice-card choice-no relative cursor-pointer group">
                                     <input type="radio" name="attendance" value="not_attend" class="peer sr-only" onchange="toggleReasonField()">
-                                    <div class="p-5 border-2 border-apple-border rounded-2xl peer-checked:border-ems-red peer-checked:bg-red-50 transition-all text-center">
-                                        <div class="w-12 h-12 mx-auto rounded-full bg-apple-gray text-apple-muted peer-checked:bg-ems-red peer-checked:text-white flex items-center justify-center text-xl mb-3 transition-colors">
+                                    <div class="p-5 border-2 border-apple-border rounded-2xl peer-checked:border-ems-red peer-checked:bg-red-50 peer-checked:shadow-apple transition-all text-center">
+                                        <div class="choice-icon w-12 h-12 mx-auto rounded-full bg-apple-gray text-apple-muted flex items-center justify-center text-xl mb-3">
                                             <i class="fa-solid fa-xmark"></i>
                                         </div>
                                         <span class="font-heading font-medium block">ไม่สามารถเข้าร่วมได้</span>
