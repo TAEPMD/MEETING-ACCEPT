@@ -103,6 +103,7 @@
 
     <input type="file" id="temp-file-input" accept=".pdf" class="hidden" onchange="handleIndividualUpload(event)">
     <input type="file" id="agenda-file-input" class="hidden" onchange="handleAgendaUpload(event)">
+    <input type="file" id="report-file-input" class="hidden" onchange="handleReportUpload(event)">
 
     <!-- Navigation Bar -->
     <nav class="sticky top-0 z-50 backdrop-blur-md bg-white/70 border-b border-apple-border no-print">
@@ -284,6 +285,7 @@
                                         <th class="pb-3 font-normal">สถานที่</th>
                                         <th class="pb-3 font-normal">สถานะ</th>
                                         <th class="pb-3 font-normal">วาระ</th>
+                                        <th class="pb-3 font-normal">รายงานการประชุม</th>
                                         <th class="pb-3 font-normal text-right">จัดการ</th>
                                     </tr>
                                 </thead>
@@ -536,6 +538,26 @@
                             </div>
                         </div>
 
+                        <div id="report-download-section" class="hidden bg-purple-50 border border-purple-200 p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 transition-all">
+                            <div class="flex items-start gap-3">
+                                <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-purple-600 shadow-sm shrink-0">
+                                    <i class="fa-solid fa-file-lines text-xl"></i>
+                                </div>
+                                <div>
+                                    <h4 class="font-heading font-semibold text-purple-800">รายงานการประชุม</h4>
+                                    <p id="report-file-name" class="text-xs text-purple-700/80">ไฟล์แนบสำหรับผู้เข้าร่วมทุกคน</p>
+                                </div>
+                            </div>
+                            <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                                <a id="view-report-btn" href="#" target="_blank" rel="noopener" class="w-full sm:w-auto px-5 py-2.5 bg-white border border-purple-300 text-purple-700 font-medium rounded-full text-center shadow-sm hover:scale-105 transition-transform text-sm">
+                                    <i class="fa-solid fa-eye mr-1"></i> View PDF
+                                </a>
+                            <a id="download-report-btn" href="#" target="_blank" class="w-full sm:w-auto px-5 py-2.5 bg-purple-600 text-white font-medium rounded-full text-center shadow-sm hover:scale-105 transition-transform text-sm">
+                                <i class="fa-solid fa-download mr-1"></i> ดาวน์โหลดรายงาน
+                            </a>
+                            </div>
+                        </div>
+
                         <div id="attendance-section" class="hidden">
                             <label class="block font-heading font-medium mb-3 text-lg">3. สถานะการเข้าร่วม</label>
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -633,6 +655,7 @@
         let db = { meetings: [], attendees: {}, responses: [] };
         let currentUploadTarget = { mtgId: null, name: null };
         let currentAgendaTargetMeetingId = null;
+        let currentReportTargetMeetingId = null;
         let currentEditableResponseId = null;
         let isEditingExistingResponse = false;
         let ROLE_PIN_HASHES = {};
@@ -1127,9 +1150,9 @@
                             renderUsersList();
                             populateMeetingDropdowns();
                             renderAdminNotifications();
-                            const qrRef = new URLSearchParams(window.location.search).get('ref');
-                            if (qrRef) {
-                                autoFillFromQRRef(qrRef);
+                            const qrToken = new URLSearchParams(window.location.search).get('t');
+                            if (qrToken) {
+                                autoFillFromToken(qrToken);
                             } else {
                                 document.getElementById('view-role-selection').classList.remove('hidden');
                             }
@@ -1455,6 +1478,16 @@
             document.getElementById('agenda-file-input').click();
         }
 
+        function triggerReportUpload(mtgId) {
+            if (!guardManagePermission()) return;
+            if (!canCurrentRoleUpload(mtgId)) {
+                showAlert('error', 'ไม่มีสิทธิ์', `Role ${currentAdminRole} ไม่ได้รับสิทธิ์อัปโหลดไฟล์ของการประชุมนี้`);
+                return;
+            }
+            currentReportTargetMeetingId = mtgId;
+            document.getElementById('report-file-input').click();
+        }
+
         function handleAgendaUpload(e) {
             if (!guardManagePermission()) return;
             const file = e.target.files[0];
@@ -1751,7 +1784,7 @@
             const input = document.getElementById('new-attendee-name'); const name = input.value.trim();
             if(!name) return; if(!db.attendees[mtgId]) db.attendees[mtgId] = [];
             if(db.attendees[mtgId].some(u => u.name.trim() === name.trim())) { showAlert('warning', 'ชื่อซ้ำ', 'มีรายชื่อนี้ในระบบแล้ว'); return; }
-            db.attendees[mtgId].push({ name: name, pdfUrl: "", pdfName: "", fileId: "" });
+            db.attendees[mtgId].push({ name: name, pdfUrl: "", pdfName: "", fileId: "", token: generateToken() });
             input.value = ''; renderAttendees(); syncAttendeesToServer(mtgId);
         }
 
@@ -1921,7 +1954,7 @@
 
                     const exists = db.attendees[mtgId].some(u => u.name.trim() === name.trim());
                     if(!exists) {
-                        db.attendees[mtgId].push({ name: name, pdfUrl: "", pdfName: "", fileId: "" });
+                        db.attendees[mtgId].push({ name: name, pdfUrl: "", pdfName: "", fileId: "", token: generateToken() });
                         added++;
                         if (sampleAdded.length < 3) sampleAdded.push(name);
                     } else {
@@ -2649,7 +2682,10 @@
                 agendaFileId: '',
                 hybridEnabled: document.getElementById('mtg-hybrid-enabled').checked,
                 uploadRoles: (document.getElementById('mtg-upload-roles').value || 'admin').trim(),
-                isActive: document.getElementById('mtg-is-active') ? document.getElementById('mtg-is-active').value !== 'inactive' : true
+                isActive: document.getElementById('mtg-is-active') ? document.getElementById('mtg-is-active').value !== 'inactive' : true,
+                reportUrl: '',
+                reportName: '',
+                reportFileId: ''
             };
 
             if (id) {
@@ -2658,6 +2694,9 @@
                     meeting.agendaUrl = oldMeeting.agendaUrl || '';
                     meeting.agendaName = oldMeeting.agendaName || '';
                     meeting.agendaFileId = oldMeeting.agendaFileId || '';
+                    meeting.reportUrl = oldMeeting.reportUrl || '';
+                    meeting.reportName = oldMeeting.reportName || '';
+                    meeting.reportFileId = oldMeeting.reportFileId || '';
                     if (!document.getElementById('mtg-is-active')) meeting.isActive = oldMeeting.isActive !== false;
                 }
             }
@@ -2765,6 +2804,67 @@
             reader.readAsDataURL(file);
         }
 
+        function handleReportUpload(e) {
+            if (!guardManagePermission()) return;
+
+            const file = e.target.files[0];
+            if (!file || !currentReportTargetMeetingId) return;
+
+            const mtgId = currentReportTargetMeetingId;
+            const mtgIndex = db.meetings.findIndex(m => m.id === mtgId);
+            if (mtgIndex < 0) return;
+
+            setGlobalLoading(true, 'Uploading report...');
+            const reader = new FileReader();
+            reader.onload = async function(ev) {
+                try {
+                    const base64Data = ev.target.result.split(',')[1];
+                    const meeting = db.meetings[mtgIndex];
+                    const oldFileId = meeting.reportFileId || '';
+                    const allowedRoles = getAllowedUploadRolesForMeeting(mtgId);
+
+                    const uploadResult = await callServerAsync('uploadMeetingReportToDrive', [
+                        base64Data,
+                        file.name,
+                        mtgId,
+                        oldFileId,
+                        currentAdminRole,
+                        allowedRoles
+                    ]);
+
+                    if (!uploadResult || !uploadResult.success) {
+                        throw new Error((uploadResult && uploadResult.error) || 'Report upload failed');
+                    }
+
+                    const saved = await callServerAsync('saveMeetingReportToServer', [
+                        mtgId,
+                        uploadResult.url,
+                        uploadResult.name,
+                        uploadResult.fileId
+                    ]);
+
+                    if (!saved) throw new Error('Meeting not found while saving report metadata');
+
+                    await refreshDbFromServer();
+                    showAlert('success', 'Uploaded', 'Meeting report has been saved to server.');
+                } catch (err) {
+                    console.error('Failed to upload report:', err);
+                    showAlert('error', 'Upload failed', 'Unable to upload and save meeting report.');
+                } finally {
+                    setGlobalLoading(false);
+                    currentReportTargetMeetingId = null;
+                    document.getElementById('report-file-input').value = '';
+                }
+            };
+            reader.onerror = function() {
+                setGlobalLoading(false);
+                currentReportTargetMeetingId = null;
+                document.getElementById('report-file-input').value = '';
+                showAlert('error', 'Read failed', 'Unable to read selected file.');
+            };
+            reader.readAsDataURL(file);
+        }
+
         function editMeeting(id) {
             if (!guardManagePermission()) return;
 
@@ -2804,7 +2904,7 @@
             tbody.innerHTML = '';
 
             if (db.meetings.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-apple-muted">No meeting data</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-apple-muted">No meeting data</td></tr>`;
                 return;
             }
 
@@ -2815,7 +2915,7 @@
             if (statusFilter === 'inactive') sortedMtg = sortedMtg.filter(m => m.isActive === false);
 
             if (sortedMtg.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-apple-muted">No meetings match this filter</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-apple-muted">No meetings match this filter</td></tr>`;
                 return;
             }
 
@@ -2824,6 +2924,9 @@
                 const agendaCell = m.agendaUrl
                     ? `<div class="flex items-center gap-2"><a href="${m.agendaUrl}" target="_blank" class="text-xs text-blue-600 underline truncate max-w-[120px]" title="${m.agendaName || 'Agenda'}">${m.agendaName || 'Download'}</a>${canManage ? `<button onclick="triggerAgendaUpload('${m.id}')" class="text-xs bg-apple-gray px-2 py-1 rounded-full border border-apple-border hover:bg-ems-yellow transition-colors"><i class="fa-solid fa-rotate"></i></button>` : ''}</div>`
                     : (canManage ? `<button onclick="triggerAgendaUpload('${m.id}')" class="text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-upload mr-1"></i> Upload</button>` : '<span class="text-xs text-apple-muted">-</span>');
+                const reportCell = m.reportUrl
+                    ? `<div class="flex items-center gap-2"><a href="${m.reportUrl}" target="_blank" class="text-xs text-purple-600 underline truncate max-w-[120px]" title="${m.reportName || 'Report'}">${m.reportName || 'Download'}</a>${canManage ? `<button onclick="triggerReportUpload('${m.id}')" class="text-xs bg-apple-gray px-2 py-1 rounded-full border border-apple-border hover:bg-ems-yellow transition-colors"><i class="fa-solid fa-rotate"></i></button>` : ''}</div>`
+                    : (canManage ? `<button onclick="triggerReportUpload('${m.id}')" class="text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-upload mr-1"></i> Upload</button>` : '<span class="text-xs text-apple-muted">-</span>');
 
                 const statusControl = canManage
                     ? `<div class="flex items-center gap-2">
@@ -2851,6 +2954,7 @@
                         <td class="py-4 px-2 align-top text-sm text-apple-muted max-w-[150px] truncate" title="${m.location}">${m.location}</td>
                         <td class="py-4 px-2 align-top text-sm">${statusControl}</td>
                         <td class="py-4 px-2 align-top text-sm">${agendaCell}</td>
+                        <td class="py-4 px-2 align-top text-sm">${reportCell}</td>
                         <td class="py-4 px-2 align-top text-right whitespace-nowrap">${actionButtons}</td>
                     </tr>`;
                 tbody.insertAdjacentHTML('beforeend', row);
@@ -3050,9 +3154,14 @@
             const agendaBtn = document.getElementById('download-agenda-btn');
             const viewAgendaBtn = document.getElementById('view-agenda-btn');
             const agendaName = document.getElementById('agenda-file-name');
+            const reportSection = document.getElementById('report-download-section');
+            const reportBtn = document.getElementById('download-report-btn');
+            const viewReportBtn = document.getElementById('view-report-btn');
+            const reportName = document.getElementById('report-file-name');
 
             dlSection.classList.add('hidden');
             agendaSection.classList.add('hidden');
+            reportSection.classList.add('hidden');
             document.getElementById('response-locked-banner').classList.add('hidden');
             currentEditableResponseId = null;
             isEditingExistingResponse = false;
@@ -3079,6 +3188,13 @@
                     if (viewAgendaBtn) viewAgendaBtn.href = getPdfViewUrl(meeting.agendaUrl);
                     agendaName.innerText = meeting.agendaName || 'Meeting agenda file';
                     agendaSection.classList.remove('hidden');
+                }
+
+                if (meeting.reportUrl) {
+                    reportBtn.href = meeting.reportUrl;
+                    if (viewReportBtn) viewReportBtn.href = getPdfViewUrl(meeting.reportUrl);
+                    reportName.innerText = meeting.reportName || 'Meeting report file';
+                    reportSection.classList.remove('hidden');
                 }
             }
 
@@ -3128,31 +3244,52 @@
         }
         function showAlert(icon, title, text) { Swal.fire({ icon, title, text, confirmButtonColor: '#1D1D1F', customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white' } }); }
 
-        // ================= QR CODE (รายบุคคล เพื่อความเป็นส่วนตัว) =================
+        // ================= QR CODE (Token ส่วนบุคคล — ไม่มีชื่อใน URL) =================
 
-        function generateQRRef(mtgId, name) {
-            try {
-                return btoa(unescape(encodeURIComponent(mtgId + '||' + name)));
-            } catch (e) {
-                return btoa(mtgId + '||' + name);
-            }
+        function generateToken() {
+            const arr = new Uint8Array(16);
+            crypto.getRandomValues(arr);
+            return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
         }
 
-        function decodeQRRef(ref) {
-            try {
-                return decodeURIComponent(escape(atob(ref)));
-            } catch (e) {
-                return atob(ref);
-            }
-        }
-
-        function generateQRUrl(mtgId, name) {
+        function generateQRUrl(token) {
             const baseUrl = window.location.href.split('?')[0].split('#')[0];
-            return baseUrl + '?ref=' + generateQRRef(mtgId, name);
+            return baseUrl + '?t=' + token;
+        }
+
+        function findAttendeeByToken(token) {
+            if (!token) return null;
+            for (const mtgId of Object.keys(db.attendees || {})) {
+                const found = (db.attendees[mtgId] || []).find(u => u.token === token);
+                if (found) return { mtgId, attendee: found };
+            }
+            return null;
+        }
+
+        function ensureAttendeeToken(mtgId, name) {
+            const attendees = db.attendees[mtgId] || [];
+            const attendee = attendees.find(u => u.name === name);
+            if (!attendee) return null;
+            if (!attendee.token) {
+                attendee.token = generateToken();
+                syncAttendeesToServer(mtgId, { showError: false });
+            }
+            return attendee.token;
+        }
+
+        function ensureAllTokens(mtgId) {
+            const attendees = db.attendees[mtgId] || [];
+            let needsSync = false;
+            attendees.forEach(u => {
+                if (!u.token) { u.token = generateToken(); needsSync = true; }
+            });
+            if (needsSync) syncAttendeesToServer(mtgId, { showError: false });
         }
 
         function showQRCode(mtgId, name) {
-            const url = generateQRUrl(mtgId, name);
+            const token = ensureAttendeeToken(mtgId, name);
+            if (!token) return;
+            const url = generateQRUrl(token);
             const meeting = getMeetingById(mtgId);
             const meetingTitle = meeting ? meeting.topic : mtgId;
 
@@ -3161,23 +3298,16 @@
                 html: `
                     <div class="text-center">
                         <p class="font-heading font-semibold text-apple-text mb-1">${escapeHtml(name)}</p>
-                        <p class="text-xs text-apple-muted mb-4 truncate">${escapeHtml(meetingTitle)}</p>
-                        <div id="swal-qr-container" class="flex justify-center mb-4 p-4 bg-white rounded-2xl border border-apple-border inline-block"></div>
-                        <p class="text-xs text-apple-muted mt-2">สแกน QR เพื่อเปิดฟอร์มตอบรับส่วนบุคคล</p>
-                        <p class="text-[10px] text-apple-muted mt-1 opacity-60">QR นี้ใช้ได้เฉพาะ ${escapeHtml(name)} เท่านั้น</p>
+                        <p class="text-xs text-apple-muted mb-4 px-2 truncate">${escapeHtml(meetingTitle)}</p>
+                        <div id="swal-qr-container" class="inline-flex justify-center p-4 bg-white rounded-2xl border border-apple-border mb-3"></div>
+                        <p class="text-xs text-apple-muted">สแกน QR เพื่อเปิดฟอร์มตอบรับส่วนบุคคล</p>
+                        <p class="text-[10px] text-apple-muted mt-1 opacity-50">QR นี้ไม่มีชื่อในตัว URL — ใช้ได้เฉพาะท่านเท่านั้น</p>
                     </div>
                 `,
                 didOpen: () => {
                     const container = document.getElementById('swal-qr-container');
                     if (typeof QRCode !== 'undefined' && container) {
-                        new QRCode(container, {
-                            text: url,
-                            width: 200,
-                            height: 200,
-                            colorDark: '#1D1D1F',
-                            colorLight: '#FFFFFF',
-                            correctLevel: QRCode.CorrectLevel.M
-                        });
+                        new QRCode(container, { text: url, width: 200, height: 200, colorDark: '#1D1D1F', colorLight: '#FFFFFF', correctLevel: QRCode.CorrectLevel.M });
                     } else if (container) {
                         container.innerHTML = '<p class="text-sm text-apple-muted p-4">ไม่สามารถสร้าง QR Code ได้</p>';
                     }
@@ -3187,11 +3317,7 @@
                 cancelButtonText: 'ปิด',
                 confirmButtonColor: '#1D1D1F',
                 cancelButtonColor: '#E5E5EA',
-                customClass: {
-                    popup: 'rounded-3xl font-heading',
-                    confirmButton: 'rounded-full px-6 text-white',
-                    cancelButton: 'rounded-full px-6'
-                }
+                customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white', cancelButton: 'rounded-full px-6' }
             }).then(result => {
                 if (result.isConfirmed) {
                     const canvas = document.querySelector('#swal-qr-container canvas');
@@ -3210,6 +3336,8 @@
             const attendees = db.attendees[mtgId] || [];
             if (!attendees.length) { showAlert('warning', 'ไม่มีรายชื่อ', 'กรุณาเพิ่มรายชื่อผู้เข้าร่วมก่อนสร้าง QR Code'); return; }
 
+            ensureAllTokens(mtgId);
+
             const meeting = getMeetingById(mtgId);
             const meetingTitle = meeting ? meeting.topic : mtgId;
             const meetingDate = meeting ? formatDateThai(meeting.date) : '';
@@ -3217,7 +3345,7 @@
 
             const attendeesData = attendees.map(u => ({
                 name: u.name,
-                url: baseUrl + '?ref=' + generateQRRef(mtgId, u.name)
+                url: baseUrl + '?t=' + u.token
             }));
 
             const printWin = window.open('', '_blank', 'width=950,height=700');
@@ -3275,7 +3403,7 @@ data.forEach(function(u) {
     nameEl.textContent = u.name;
     var hintEl = document.createElement('p');
     hintEl.className = 'hint';
-    hintEl.textContent = 'สแกนเพื่อตอบรับ';
+    hintEl.textContent = 'สแกนเพื่อตอบรับการประชุม';
     card.appendChild(wrap);
     card.appendChild(nameEl);
     card.appendChild(hintEl);
@@ -3288,70 +3416,47 @@ data.forEach(function(u) {
             printWin.document.close();
         }
 
-        function autoFillFromQRRef(ref) {
-            try {
-                const decoded = decodeQRRef(ref);
-                const sepIdx = decoded.indexOf('||');
-                if (sepIdx < 0) { document.getElementById('view-role-selection').classList.remove('hidden'); return; }
-                const mtgId = decoded.substring(0, sepIdx);
-                const name = decoded.substring(sepIdx + 2);
-                if (!mtgId || !name) { document.getElementById('view-role-selection').classList.remove('hidden'); return; }
-
-                const meeting = getMeetingById(mtgId);
-                if (!meeting || meeting.isActive === false) {
-                    Swal.fire({
-                        icon: 'warning',
-                        title: 'ลิงก์ไม่พร้อมใช้งาน',
-                        text: 'การประชุมนี้ถูกปิดการรับตอบรับแล้ว กรุณาติดต่อผู้จัดงาน',
-                        confirmButtonColor: '#1D1D1F',
-                        customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white' }
-                    }).then(() => showView('role-selection'));
-                    return;
-                }
-
-                const attendee = (db.attendees[mtgId] || []).find(u => u.name === name);
-                if (!attendee) {
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'ไม่พบรายชื่อ',
-                        text: 'ไม่พบชื่อของคุณในรายการประชุมนี้ กรุณาติดต่อผู้จัดงาน',
-                        confirmButtonColor: '#1D1D1F',
-                        customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white' }
-                    }).then(() => showView('role-selection'));
-                    return;
-                }
-
-                showView('user-dashboard');
-                setTimeout(() => {
-                    const userMtgSelect = document.getElementById('user-select-meeting');
-                    if (userMtgSelect) {
-                        userMtgSelect.value = mtgId;
-                        handleUserMeetingSelect();
-                    }
-                    setTimeout(() => {
-                        const userNameSelect = document.getElementById('user-name');
-                        if (userNameSelect) {
-                            userNameSelect.value = name;
-                            handleUserNameSelect();
-                        }
-                        Swal.fire({
-                            toast: true,
-                            position: 'top',
-                            icon: 'info',
-                            title: `สวัสดี ${name}`,
-                            text: 'ระบบได้เลือกชื่อของคุณแล้ว กรุณาเลือกสถานะการเข้าร่วม',
-                            showConfirmButton: false,
-                            timer: 3000,
-                            timerProgressBar: true,
-                            customClass: { popup: 'rounded-2xl font-heading shadow-apple mt-4' }
-                        });
-                    }, 150);
-                }, 150);
-
-            } catch (e) {
-                console.error('Failed to decode QR ref:', e);
-                document.getElementById('view-role-selection').classList.remove('hidden');
+        function autoFillFromToken(token) {
+            const result = findAttendeeByToken(token);
+            if (!result) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'QR Code ไม่ถูกต้อง',
+                    text: 'ไม่พบข้อมูลที่เชื่อมกับ QR Code นี้ กรุณาติดต่อผู้จัดงาน',
+                    confirmButtonColor: '#1D1D1F',
+                    customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white' }
+                }).then(() => showView('role-selection'));
+                return;
             }
+            const { mtgId, attendee } = result;
+            const meeting = getMeetingById(mtgId);
+            if (!meeting || meeting.isActive === false) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'ลิงก์ไม่พร้อมใช้งาน',
+                    text: 'การประชุมนี้ถูกปิดการรับตอบรับแล้ว กรุณาติดต่อผู้จัดงาน',
+                    confirmButtonColor: '#1D1D1F',
+                    customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white' }
+                }).then(() => showView('role-selection'));
+                return;
+            }
+            const name = attendee.name;
+            showView('user-dashboard');
+            setTimeout(() => {
+                const userMtgSelect = document.getElementById('user-select-meeting');
+                if (userMtgSelect) { userMtgSelect.value = mtgId; handleUserMeetingSelect(); }
+                setTimeout(() => {
+                    const userNameSelect = document.getElementById('user-name');
+                    if (userNameSelect) { userNameSelect.value = name; handleUserNameSelect(); }
+                    Swal.fire({
+                        toast: true, position: 'top', icon: 'info',
+                        title: `สวัสดี ${name}`,
+                        text: 'กรุณาเลือกสถานะการเข้าร่วมประชุม',
+                        showConfirmButton: false, timer: 3500, timerProgressBar: true,
+                        customClass: { popup: 'rounded-2xl font-heading shadow-apple mt-4' }
+                    });
+                }, 150);
+            }, 150);
         }
     </script>
 </body>
