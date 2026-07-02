@@ -1315,6 +1315,11 @@
             if(viewId === 'admin-dashboard') { updateAdminRoleBadge(); renderAdminMeetingsList(); renderUsersList(); renderAdminNotifications(); switchAdminTab('meetings'); applyAdminRolePermissions(); startAdminNotificationPolling(); }
             if(viewId === 'user-dashboard') {
                 populateMeetingDropdowns(); document.getElementById('user-response-form').classList.add('hidden');
+                // ปลดล็อกช่องเลือก (กรณีก่อนหน้าเข้าผ่าน QR ส่วนบุคคล)
+                ['user-select-meeting', 'user-name'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) { el.disabled = false; el.classList.remove('opacity-70', 'cursor-not-allowed'); }
+                });
                 document.getElementById('user-select-meeting').value = ""; document.getElementById('invitation-download-section').classList.add('hidden');
                 document.getElementById('agenda-download-section').classList.add('hidden');
                 document.getElementById('attendance-mode-container').classList.add('hidden');
@@ -1678,6 +1683,8 @@
             
             if (!mtgId) { container.classList.add('hidden'); return; }
             container.classList.remove('hidden');
+            // สร้าง token อัตโนมัติให้ทุกรายชื่อ เพื่อให้ QR/ลิงก์ส่วนบุคคลพร้อมใช้งานทันที
+            if (canManage) ensureAllTokens(mtgId);
             const users = db.attendees[mtgId] || []; count.innerText = users.length; list.innerHTML = '';
             
             if(users.length === 0) { list.innerHTML = `<li class="py-8 text-center text-apple-muted">ยังไม่มีรายชื่อในระบบ</li>`; return; }
@@ -1704,6 +1711,7 @@
                         <div class="flex items-center gap-3 ml-8 sm:ml-0">
                             ${fileUI}
                             <button onclick="showQRCode('${mtgId}', '${userNameSafe}')" class="text-apple-muted hover:text-ems-dark hover:bg-ems-yellow/20 p-1.5 rounded-full transition-colors" title="QR Code ส่วนบุคคล"><i class="fa-solid fa-qrcode text-sm"></i></button>
+                            <button onclick="copyAttendeeLink('${mtgId}', '${userNameSafe}')" class="text-apple-muted hover:text-blue-600 hover:bg-blue-50 p-1.5 rounded-full transition-colors" title="คัดลอกลิงก์ตอบรับส่วนบุคคล"><i class="fa-solid fa-link text-sm"></i></button>
                             ${attendeeActions}
                         </div>
                     </li>`;
@@ -3347,6 +3355,46 @@
             if (needsSync) syncAttendeesToServer(mtgId, { showError: false });
         }
 
+        async function copyTextToClipboard(text) {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+                return;
+            }
+            // Fallback สำหรับ browser เก่า / non-secure context
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+        }
+
+        async function copyAttendeeLink(mtgId, name) {
+            const token = ensureAttendeeToken(mtgId, name);
+            if (!token) { showAlert('error', 'ไม่พบรายชื่อ', 'ไม่สามารถสร้างลิงก์สำหรับรายชื่อนี้ได้'); return; }
+            const url = generateQRUrl(token);
+            try {
+                await copyTextToClipboard(url);
+                Swal.fire({
+                    toast: true, position: 'top', icon: 'success',
+                    title: 'คัดลอกลิงก์แล้ว',
+                    text: `ลิงก์ตอบรับส่วนบุคคลของ ${name}`,
+                    showConfirmButton: false, timer: 2500, timerProgressBar: true,
+                    customClass: { popup: 'rounded-2xl font-heading shadow-apple mt-4' }
+                });
+            } catch (err) {
+                console.error('Copy failed:', err);
+                Swal.fire({
+                    title: 'คัดลอกลิงก์ด้วยตนเอง',
+                    html: `<input class="apple-input text-xs" value="${escapeHtml(url)}" readonly onclick="this.select()">`,
+                    confirmButtonText: 'ปิด', confirmButtonColor: '#1D1D1F',
+                    customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white' }
+                });
+            }
+        }
+
         function showQRCode(mtgId, name) {
             const token = ensureAttendeeToken(mtgId, name);
             if (!token) return;
@@ -3362,7 +3410,11 @@
                         <p class="text-xs text-apple-muted mb-4 px-2 truncate">${escapeHtml(meetingTitle)}</p>
                         <div id="swal-qr-container" class="inline-flex justify-center p-4 bg-white rounded-2xl border border-apple-border mb-3"></div>
                         <p class="text-xs text-apple-muted">สแกน QR เพื่อเปิดฟอร์มตอบรับส่วนบุคคล</p>
-                        <p class="text-[10px] text-apple-muted mt-1 opacity-50">QR นี้ไม่มีชื่อในตัว URL — ใช้ได้เฉพาะท่านเท่านั้น</p>
+                        <div class="mt-3 flex items-center gap-2 bg-apple-gray rounded-xl px-3 py-2">
+                            <input id="swal-qr-link" class="flex-1 bg-transparent text-[11px] text-apple-muted focus:outline-none min-w-0" value="${escapeHtml(url)}" readonly onclick="this.select()">
+                            <button type="button" onclick="copyAttendeeLink('${mtgId.replace(/'/g, "\\'")}', '${name.replace(/'/g, "\\'")}')" class="shrink-0 text-xs font-semibold bg-white border border-apple-border px-3 py-1.5 rounded-full hover:bg-ems-yellow transition-colors"><i class="fa-solid fa-copy mr-1"></i>คัดลอก</button>
+                        </div>
+                        <p class="text-[10px] text-apple-muted mt-2 opacity-50">QR นี้ไม่มีชื่อในตัว URL — ใช้ได้เฉพาะท่านเท่านั้น</p>
                     </div>
                 `,
                 didOpen: () => {
@@ -3509,6 +3561,9 @@ data.forEach(function(u) {
                 setTimeout(() => {
                     const userNameSelect = document.getElementById('user-name');
                     if (userNameSelect) { userNameSelect.value = name; handleUserNameSelect(); }
+                    // ล็อกการเลือกประชุม/ชื่อ เมื่อเข้าผ่าน QR ส่วนบุคคล เพื่อป้องกันการตอบแทนผู้อื่น
+                    if (userMtgSelect) { userMtgSelect.disabled = true; userMtgSelect.classList.add('opacity-70', 'cursor-not-allowed'); }
+                    if (userNameSelect) { userNameSelect.disabled = true; userNameSelect.classList.add('opacity-70', 'cursor-not-allowed'); }
                     Swal.fire({
                         toast: true, position: 'top', icon: 'info',
                         title: `สวัสดี ${name}`,
