@@ -258,7 +258,7 @@
                             <span id="admin-role-badge" class="text-[10px] bg-apple-gray px-2 py-0.5 rounded-full text-apple-muted">Role</span>
                         </div>
                         <div class="relative w-full sm:w-auto">
-                            <button type="button" onclick="toggleAdminNotifications()" class="admin-control-pill relative flex items-center justify-center gap-2 bg-apple-surface border border-apple-border rounded-full px-4 py-2 w-full sm:w-auto text-sm text-apple-text hover:bg-apple-gray transition-colors">
+                            <button type="button" id="admin-notification-toggle" onclick="toggleAdminNotifications()" class="admin-control-pill relative flex items-center justify-center gap-2 bg-apple-surface border border-apple-border rounded-full px-4 py-2 w-full sm:w-auto text-sm text-apple-text hover:bg-apple-gray transition-colors">
                                 <i class="fa-solid fa-bell text-apple-muted"></i>
                                 <span>แจ้งเตือน</span>
                                 <span id="admin-notification-count" class="notification-badge hidden absolute -top-2 -right-1">0</span>
@@ -456,12 +456,26 @@
                                 <option value="name_desc">ชื่อ Z-A</option>
                             </select>
                         </div>
+                        <div class="w-full md:w-64">
+                            <label class="block text-sm text-apple-muted mb-2 ml-1">ค้นหา</label>
+                            <div class="relative">
+                                <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-apple-muted text-sm pointer-events-none"></i>
+                                <input type="search" id="admin-history-search" oninput="renderHistory()" class="apple-input pl-10" placeholder="ชื่อผู้ตอบ หรือหัวข้อ...">
+                            </div>
+                        </div>
                     </div>
 
+                    <div id="history-stats" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
+
                     <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple">
-                        <div class="flex justify-between items-center mb-4">
+                        <div class="flex justify-between items-center mb-4 flex-wrap gap-3">
                             <h3 class="font-heading font-semibold text-lg">ข้อมูลการตอบรับ</h3>
-                            <span class="bg-apple-gray text-apple-text text-xs font-bold px-3 py-1 rounded-full"><span id="history-count">0</span> รายการ</span>
+                            <div class="flex items-center gap-2">
+                                <button type="button" onclick="exportHistoryCSV()" class="text-xs font-semibold bg-apple-text text-white px-4 py-2 rounded-full hover:bg-gray-800 transition-colors" title="ส่งออกรายการตามตัวกรองปัจจุบันเป็นไฟล์ CSV">
+                                    <i class="fa-solid fa-file-csv mr-1"></i> ส่งออก CSV
+                                </button>
+                                <span class="bg-apple-gray text-apple-text text-xs font-bold px-3 py-1 rounded-full"><span id="history-count">0</span> รายการ</span>
+                            </div>
                         </div>
                         <p class="table-swipe-hint"><i class="fa-solid fa-arrows-left-right"></i> ปัดซ้าย-ขวาเพื่อดูข้อมูลทั้งหมด</p>
                         <div class="table-wrap">
@@ -509,7 +523,7 @@
                             </div>
                             <div>
                                 <label class="block text-sm text-apple-muted mb-1 ml-1">PIN (ตัวเลขอย่างน้อย 4 หลัก)</label>
-                                <input type="password" id="usr-pin" required minlength="4" maxlength="10" pattern="[0-9]{4,10}" class="apple-input" placeholder="เช่น 123456">
+                                <input type="password" id="usr-pin" required minlength="4" maxlength="10" pattern="[0-9]{4,10}" inputmode="numeric" autocomplete="new-password" class="apple-input" placeholder="เช่น 123456">
                             </div>
                             <div class="md:col-span-3 flex justify-end gap-3 mt-2">
                                 <button type="button" onclick="resetUserForm()" class="px-6 py-2.5 rounded-full bg-apple-gray text-apple-text font-medium hover:bg-gray-200 transition-colors">ยกเลิก</button>
@@ -1149,6 +1163,19 @@
             panel.classList.toggle('hidden');
         }
 
+        // ปิด panel แจ้งเตือนเมื่อคลิกพื้นที่อื่น หรือกด Escape
+        document.addEventListener('click', (e) => {
+            const panel = document.getElementById('admin-notification-panel');
+            if (!panel || panel.classList.contains('hidden')) return;
+            if (e.target.closest('#admin-notification-panel') || e.target.closest('#admin-notification-toggle')) return;
+            panel.classList.add('hidden');
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            const panel = document.getElementById('admin-notification-panel');
+            if (panel) panel.classList.add('hidden');
+        });
+
         function showAdminResponseNotificationToast(response) {
             const adminView = document.getElementById('view-admin-dashboard');
             if (!adminView || adminView.classList.contains('hidden') || sessionStorage.getItem('isAdminAuthed') !== 'true') return;
@@ -1539,7 +1566,7 @@
             if (canManage) ensureAllTokens(mtgId);
             const users = db.attendees[mtgId] || []; count.innerText = users.length; list.innerHTML = '';
             
-            if(users.length === 0) { list.innerHTML = `<li class="py-8 text-center text-apple-muted">ยังไม่มีรายชื่อในระบบ</li>`; return; }
+            if(users.length === 0) { list.innerHTML = `<li class="py-12 text-center text-apple-muted"><i class="fa-solid fa-user-plus text-3xl mb-3 block opacity-40"></i>ยังไม่มีรายชื่อในระบบ — เพิ่มรายบุคคล หรือนำเข้าจากไฟล์ CSV ด้านบน</li>`; return; }
 
             users.forEach((user, idx) => {
                 const userNameSafe = escapeHtml(escapeJsString(user.name));
@@ -1553,8 +1580,8 @@
 
                 const attendeeActions = canManage
                     ? `<div class="w-px h-4 bg-apple-border hidden sm:block"></div>
-                            <button onclick="editAttendeeName('${mtgId}', '${userNameSafe}')" class="text-apple-muted hover:text-ems-yellow p-1.5 rounded-full hover:bg-yellow-50 transition-colors" title="แก้ไขชื่อ"><i class="fa-solid fa-pen"></i></button>
-                            <button onclick="removeAttendee('${mtgId}', '${userNameSafe}')" class="text-apple-muted hover:text-ems-red p-1.5 rounded-full hover:bg-red-50 transition-colors" title="ลบรายชื่อ"><i class="fa-solid fa-trash-can"></i></button>`
+                            <button onclick="editAttendeeName('${mtgId}', '${userNameSafe}')" aria-label="แก้ไขชื่อ" class="text-apple-muted hover:text-ems-yellow p-1.5 rounded-full hover:bg-yellow-50 transition-colors" title="แก้ไขชื่อ"><i class="fa-solid fa-pen"></i></button>
+                            <button onclick="removeAttendee('${mtgId}', '${userNameSafe}')" aria-label="ลบรายชื่อ" class="text-apple-muted hover:text-ems-red p-1.5 rounded-full hover:bg-red-50 transition-colors" title="ลบรายชื่อ"><i class="fa-solid fa-trash-can"></i></button>`
                     : '<span class="text-xs text-apple-muted">ดูอย่างเดียว</span>';
 
                 list.innerHTML += `
@@ -1568,8 +1595,8 @@
                         </div>
                         <div class="flex items-center gap-3 ml-8 sm:ml-0">
                             ${fileUI}
-                            <button onclick="showQRCode('${mtgId}', '${userNameSafe}')" class="text-apple-muted hover:text-ems-dark hover:bg-ems-yellow/20 p-1.5 rounded-full transition-colors" title="QR Code ส่วนบุคคล"><i class="fa-solid fa-qrcode text-sm"></i></button>
-                            <button onclick="copyAttendeeLink('${mtgId}', '${userNameSafe}')" class="text-apple-muted hover:text-blue-600 hover:bg-blue-50 p-1.5 rounded-full transition-colors" title="คัดลอกลิงก์ตอบรับส่วนบุคคล"><i class="fa-solid fa-link text-sm"></i></button>
+                            <button onclick="showQRCode('${mtgId}', '${userNameSafe}')" aria-label="QR Code ส่วนบุคคล" class="text-apple-muted hover:text-ems-dark hover:bg-ems-yellow/20 p-1.5 rounded-full transition-colors" title="QR Code ส่วนบุคคล"><i class="fa-solid fa-qrcode text-sm"></i></button>
+                            <button onclick="copyAttendeeLink('${mtgId}', '${userNameSafe}')" aria-label="คัดลอกลิงก์ตอบรับส่วนบุคคล" class="text-apple-muted hover:text-blue-600 hover:bg-blue-50 p-1.5 rounded-full transition-colors" title="คัดลอกลิงก์ตอบรับส่วนบุคคล"><i class="fa-solid fa-link text-sm"></i></button>
                             ${attendeeActions}
                         </div>
                     </li>`;
@@ -1991,13 +2018,13 @@
         }
 
         // ================= ADMIN: HISTORY =================
-        function renderHistory() {
+        function getFilteredHistoryResponses() {
             const filterMtgId = document.getElementById('admin-history-filter').value;
             const statusFilter = document.getElementById('admin-history-status-filter').value;
             const sortMode = document.getElementById('admin-history-sort').value;
-            const tbody = document.getElementById('admin-history-list');
-            const canDeleteHistory = isAdminRole();
-            
+            const searchEl = document.getElementById('admin-history-search');
+            const searchTerm = searchEl ? searchEl.value.trim().toLowerCase() : '';
+
             let filteredResponses = db.responses;
             if(filterMtgId && filterMtgId !== 'all') filteredResponses = db.responses.filter(r => r.meetingId === filterMtgId);
 
@@ -2008,15 +2035,59 @@
                 });
             }
 
+            if (searchTerm) {
+                filteredResponses = filteredResponses.filter(r =>
+                    String(r.name || '').toLowerCase().includes(searchTerm)
+                    || String(r.topic || '').toLowerCase().includes(searchTerm));
+            }
+
             filteredResponses = [...filteredResponses];
             if (sortMode === 'oldest') filteredResponses.sort((a,b) => parseDateStr(a.timestamp) - parseDateStr(b.timestamp));
             else if (sortMode === 'name_asc') filteredResponses.sort((a,b) => String(a.name || '').localeCompare(String(b.name || ''), 'th'));
             else if (sortMode === 'name_desc') filteredResponses.sort((a,b) => String(b.name || '').localeCompare(String(a.name || ''), 'th'));
             else filteredResponses.sort((a,b) => parseDateStr(b.timestamp) - parseDateStr(a.timestamp));
 
+            return filteredResponses;
+        }
+
+        function renderHistoryStats(responses) {
+            const statsEl = document.getElementById('history-stats');
+            if (!statsEl) return;
+
+            const total = responses.length;
+            const attend = responses.filter(r => r.status === 'attend').length;
+            const notAttend = total - attend;
+            const online = responses.filter(r => String(r.attendanceMode || '').toLowerCase() === 'online').length;
+            const onsite = responses.filter(r => String(r.attendanceMode || '').toLowerCase() === 'onsite').length;
+
+            const statCard = (icon, iconClass, value, label) => `
+                <div class="bg-apple-surface rounded-2xl p-4 shadow-apple flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full ${iconClass} flex items-center justify-center shrink-0"><i class="${icon}"></i></div>
+                    <div class="min-w-0">
+                        <p class="text-xl font-heading font-bold leading-tight">${value}</p>
+                        <p class="text-xs text-apple-muted truncate">${label}</p>
+                    </div>
+                </div>`;
+
+            statsEl.innerHTML =
+                statCard('fa-solid fa-inbox', 'bg-apple-gray text-apple-text', total, 'ตอบรับทั้งหมด')
+                + statCard('fa-solid fa-check', 'bg-green-50 text-ems-green', attend, 'เข้าร่วม')
+                + statCard('fa-solid fa-xmark', 'bg-red-50 text-ems-red', notAttend, 'ไม่เข้าร่วม')
+                + statCard('fa-solid fa-tower-broadcast', 'bg-blue-50 text-blue-600', `${onsite} / ${online}`, 'Onsite / Online');
+        }
+
+        function renderHistory() {
+            const tbody = document.getElementById('admin-history-list');
+            const canDeleteHistory = isAdminRole();
+            const filteredResponses = getFilteredHistoryResponses();
+
+            renderHistoryStats(filteredResponses);
             document.getElementById('history-count').innerText = filteredResponses.length; tbody.innerHTML = '';
 
-            if (filteredResponses.length === 0) { tbody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-apple-muted">ยังไม่มีประวัติการตอบรับ</td></tr>`; return; }
+            if (filteredResponses.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-12 text-apple-muted"><i class="fa-regular fa-folder-open text-3xl mb-3 block opacity-40"></i>ไม่พบประวัติการตอบรับตามเงื่อนไขที่เลือก</td></tr>`;
+                return;
+            }
 
             filteredResponses.forEach(r => {
                 const modeLabel = r.attendanceMode ? ` (${String(r.attendanceMode).toLowerCase() === 'online' ? 'Online' : 'Onsite'})` : '';
@@ -2038,6 +2109,49 @@
                         </td>
                     </tr>`;
                 tbody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+        function exportHistoryCSV() {
+            const responses = getFilteredHistoryResponses();
+            if (responses.length === 0) {
+                showAlert('warning', 'ไม่มีข้อมูล', 'ไม่พบรายการตอบรับตามตัวกรองปัจจุบันสำหรับส่งออก');
+                return;
+            }
+
+            const csvCell = (value) => `"${String(value == null ? '' : value).replace(/"/g, '""')}"`;
+            const header = ['ชื่อผู้ตอบรับ', 'หัวข้อประชุม', 'วันที่ประชุม', 'เวลา', 'สถานที่', 'สถานะ', 'รูปแบบการเข้าร่วม', 'เหตุผล', 'อีเมล', 'เวลาบันทึก'];
+            const rows = responses.map(r => [
+                r.name,
+                r.topic,
+                r.date,
+                r.time,
+                r.location,
+                r.status === 'attend' ? 'เข้าร่วม' : 'ไม่เข้าร่วม',
+                r.attendanceMode ? (String(r.attendanceMode).toLowerCase() === 'online' ? 'Online' : 'Onsite') : '',
+                r.reason,
+                r.email,
+                r.timestamp
+            ].map(csvCell).join(','));
+
+            // \uFEFF (BOM) ทำให้ Excel เปิดไฟล์ภาษาไทยได้ถูกต้อง
+            const csvContent = '\uFEFF' + header.map(csvCell).join(',') + '\r\n' + rows.join('\r\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const now = new Date();
+            const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+            link.href = URL.createObjectURL(blob);
+            link.download = `NIEM_RSVP_History_${stamp}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+
+            Swal.fire({
+                toast: true, position: 'top', icon: 'success',
+                title: `ส่งออก ${responses.length} รายการแล้ว`,
+                showConfirmButton: false, timer: 2000, timerProgressBar: true,
+                customClass: { popup: 'rounded-2xl font-heading shadow-apple mt-4' }
             });
         }
 
@@ -2765,7 +2879,7 @@
             tbody.innerHTML = '';
 
             if (db.meetings.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-apple-muted">ไม่มีข้อมูลการประชุม</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-12 text-apple-muted"><i class="fa-regular fa-calendar-plus text-3xl mb-3 block opacity-40"></i>ยังไม่มีข้อมูลการประชุม — เริ่มต้นด้วยการกรอกฟอร์มด้านบน</td></tr>`;
                 return;
             }
 
@@ -2776,12 +2890,17 @@
             if (statusFilter === 'inactive') sortedMtg = sortedMtg.filter(m => m.isActive === false);
 
             if (sortedMtg.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-apple-muted">ไม่พบรายการประชุมตามตัวกรองที่เลือก</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-12 text-apple-muted"><i class="fa-solid fa-filter-circle-xmark text-3xl mb-3 block opacity-40"></i>ไม่พบรายการประชุมตามตัวกรองที่เลือก</td></tr>`;
                 return;
             }
 
             sortedMtg.forEach(m => {
                 const isActive = m.isActive !== false;
+                const attendeeTotal = (db.attendees[m.id] || []).length;
+                const respondedCount = new Set((db.responses || []).filter(r => r.meetingId === m.id).map(r => String(r.name || '').trim())).size;
+                const respondedBadge = attendeeTotal > 0
+                    ? `<span class="inline-flex items-center gap-1 mt-1 text-[10px] ${respondedCount >= attendeeTotal ? 'bg-green-100 text-green-700' : 'bg-apple-gray text-apple-muted'} px-2 py-0.5 rounded-full" title="ผู้ตอบรับแล้ว ${respondedCount} จากรายชื่อทั้งหมด ${attendeeTotal} คน"><i class="fa-solid fa-user-check text-[9px]"></i> ${respondedCount}/${attendeeTotal} ตอบแล้ว</span>`
+                    : (respondedCount > 0 ? `<span class="inline-flex items-center gap-1 mt-1 text-[10px] bg-apple-gray text-apple-muted px-2 py-0.5 rounded-full"><i class="fa-solid fa-user-check text-[9px]"></i> ${respondedCount} ตอบแล้ว</span>` : '');
                 const agendaCell = m.agendaUrl
                     ? `<div class="flex items-center gap-2"><a href="${escapeHtml(m.agendaUrl)}" target="_blank" rel="noopener" class="text-xs text-blue-600 underline truncate max-w-[120px]" title="${escapeHtml(m.agendaName || 'วาระการประชุม')}">${escapeHtml(m.agendaName || 'ดาวน์โหลด')}</a>${canManage ? `<button onclick="triggerAgendaUpload('${m.id}')" class="text-xs bg-apple-gray px-2 py-1 rounded-full border border-apple-border hover:bg-ems-yellow transition-colors"><i class="fa-solid fa-rotate"></i></button>` : ''}</div>`
                     : (canManage ? `<button onclick="triggerAgendaUpload('${m.id}')" class="text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-upload mr-1"></i> อัปโหลด</button>` : '<span class="text-xs text-apple-muted">-</span>');
@@ -2804,13 +2923,13 @@
                         : `<span class="inline-flex items-center gap-1 text-xs font-semibold bg-red-100 text-red-700 px-3 py-1.5 rounded-full border border-red-300"><span class="w-2 h-2 rounded-full bg-red-500"></span>Inactive</span>`);
 
                 const actionButtons = canManage
-                    ? `<button onclick="editMeeting('${m.id}')" class="w-8 h-8 rounded-full bg-white border border-apple-border text-apple-text hover:bg-apple-gray transition-colors mx-1"><i class="fa-solid fa-pen text-xs"></i></button>
-                       <button onclick="deleteMeeting('${m.id}')" class="w-8 h-8 rounded-full bg-white border border-apple-border text-ems-red hover:bg-red-50 transition-colors"><i class="fa-solid fa-trash text-xs"></i></button>`
+                    ? `<button onclick="editMeeting('${m.id}')" aria-label="แก้ไขการประชุม" title="แก้ไขการประชุม" class="w-8 h-8 rounded-full bg-white border border-apple-border text-apple-text hover:bg-apple-gray transition-colors mx-1"><i class="fa-solid fa-pen text-xs"></i></button>
+                       <button onclick="deleteMeeting('${m.id}')" aria-label="ลบการประชุม" title="ลบการประชุม" class="w-8 h-8 rounded-full bg-white border border-apple-border text-ems-red hover:bg-red-50 transition-colors"><i class="fa-solid fa-trash text-xs"></i></button>`
                     : '<span class="text-xs text-apple-muted">ดูอย่างเดียว</span>';
 
                 const row = `
                     <tr class="group hover:bg-apple-gray transition-colors ${isActive ? '' : 'opacity-70'}">
-                        <td class="py-4 px-2 align-top"><p class="font-medium text-apple-text">${escapeHtml(m.topic)}</p>${m.hybridEnabled ? '<span class="inline-block mt-1 text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Hybrid</span>' : ''}</td>
+                        <td class="py-4 px-2 align-top"><p class="font-medium text-apple-text">${escapeHtml(m.topic)}</p><div class="flex flex-wrap gap-1">${m.hybridEnabled ? '<span class="inline-block mt-1 text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Hybrid</span>' : ''}${respondedBadge}</div></td>
                         <td class="py-4 px-2 align-top text-sm"><p>${formatDateThai(m.date)}</p><p class="text-apple-muted">${escapeHtml(m.time)} น.</p></td>
                         <td class="py-4 px-2 align-top text-sm text-apple-muted max-w-[150px] truncate" title="${escapeHtml(m.location)}">${escapeHtml(m.location)}</td>
                         <td class="py-4 px-2 align-top text-sm">${statusControl}</td>
@@ -2870,7 +2989,7 @@
             tbody.innerHTML = '';
 
             if (users.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" class="text-center py-8 text-apple-muted">ยังไม่มีผู้ใช้งาน</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center py-12 text-apple-muted"><i class="fa-solid fa-users-slash text-3xl mb-3 block opacity-40"></i>ยังไม่มีผู้ใช้งานในระบบ</td></tr>';
                 return;
             }
 
