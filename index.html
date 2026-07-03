@@ -1090,6 +1090,12 @@
             }[ch]));
         }
 
+        // สำหรับฝังข้อความลงใน string literal ของ JS ภายใน attribute เช่น onclick="fn('...')"
+        // ต้อง escape สองชั้น: ชั้น JS ก่อน แล้วค่อยชั้น HTML (ผู้เรียกควรครอบด้วย escapeHtml อีกที)
+        function escapeJsString(value) {
+            return String(value == null ? '' : value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        }
+
         function renderAdminNotifications() {
             const unreadResponses = getUnreadResponses();
             const unreadCount = unreadResponses.length;
@@ -1393,6 +1399,7 @@
                 });
                 document.getElementById('user-select-meeting').value = ""; document.getElementById('invitation-download-section').classList.add('hidden');
                 document.getElementById('agenda-download-section').classList.add('hidden');
+                document.getElementById('report-download-section').classList.add('hidden');
                 document.getElementById('attendance-mode-container').classList.add('hidden');
                 document.querySelectorAll('input[name="attendance"]').forEach(r => r.checked = false); document.getElementById('reason-container').classList.add('hidden');
             }
@@ -1409,98 +1416,6 @@
         }
 
         // ================= ADMIN: MEETINGS (SYNC SERVER) =================
-        async function handleSaveMeeting(e) {
-            e.preventDefault();
-            if (!guardManagePermission()) return;
-            const id = document.getElementById('mtg-id').value;
-            const meeting = {
-                id: id ? id : "M" + Date.now().toString().slice(-9),
-                topic: document.getElementById('mtg-topic').value,
-                date: document.getElementById('mtg-date').value,
-                time: document.getElementById('mtg-time').value,
-                location: document.getElementById('mtg-location').value,
-                onlineLink: document.getElementById('mtg-online-link').value,
-                agendaUrl: '',
-                agendaName: '',
-                agendaFileId: '',
-                hybridEnabled: document.getElementById('mtg-hybrid-enabled').checked,
-                uploadRoles: (document.getElementById('mtg-upload-roles').value || 'admin').trim(),
-                isActive: true
-            };
-
-            if (id) {
-                const oldMeeting = db.meetings.find(m => m.id === id);
-                if (oldMeeting) {
-                    meeting.agendaUrl = oldMeeting.agendaUrl || '';
-                    meeting.agendaName = oldMeeting.agendaName || '';
-                    meeting.agendaFileId = oldMeeting.agendaFileId || '';
-                    meeting.isActive = oldMeeting.isActive !== false;
-                }
-            }
-
-            // อัปเดต Local DB ก่อน (Optimistic UI)
-            if (id) {
-                const index = db.meetings.findIndex(m => m.id === id);
-                if (index > -1) db.meetings[index] = meeting;
-            } else {
-                db.meetings.push(meeting); db.attendees[meeting.id] = [];
-            }
-            
-            // ส่งไป Server
-            document.getElementById('global-loader').classList.remove('hidden');
-            document.getElementById('global-loader').style.opacity = '1';
-            document.querySelector('#global-loader h2').innerText = 'à¸à¸³à¸¥à¸±à¸‡à¸šà¸±à¸™à¸—à¸¶à¸à¸‚à¹‰à¸­à¸¡à¸¹à¸¥...';
-            document.querySelector('#global-loader h2').innerText = 'Saving data...';
-            await callServerAsync('saveMeetingToServer', [meeting]).catch(err => {
-                document.getElementById('global-loader').classList.add('hidden');
-                console.error('Failed to save meeting:', err);
-                showAlert('error', 'Save failed', 'Unable to save data to server.');
-                throw err;
-                showAlert('error', 'à¸‚à¹‰à¸­à¸œà¸´à¸”à¸žà¸¥à¸²à¸”', 'à¹„à¸¡à¹ˆà¸ªà¸²à¸¡à¸²à¸£à¸–à¸šà¸±à¸™à¸—à¸¶à¸à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¹„à¸”à¹‰');
-                throw err;
-            });
-            await refreshDbFromServer().catch(err => {
-                document.getElementById('global-loader').classList.add('hidden');
-                console.error('Failed to refresh after save:', err);
-                throw err;
-            });
-            document.getElementById('global-loader').classList.add('hidden');
-            resetMeetingForm();
-            showAlert('success', 'Saved', 'Meeting data has been saved.');
-            return;
-            showAlert('success', 'à¸šà¸±à¸™à¸—à¸¶à¸à¸ªà¸³à¹€à¸£à¹‡à¸ˆ', 'à¸­à¸±à¸›à¹€à¸”à¸•à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸à¸²à¸£à¸›à¸£à¸°à¸Šà¸¸à¸¡à¹à¸¥à¹‰à¸§');
-            /*
-            callServer('saveMeetingToServer', [meeting], function() {}, function(err) {
-                showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้');
-            });
-
-            showAlert('success', 'บันทึกสำเร็จ', 'อัปเดตข้อมูลการประชุมแล้ว');
-            resetMeetingForm(); renderAdminMeetingsList(); populateMeetingDropdowns();
-            */
-        }
-
-        function editMeeting(id) {
-            if (!guardManagePermission()) return;
-            const meeting = db.meetings.find(m => m.id === id); if (!meeting) return;
-            document.getElementById('mtg-id').value = meeting.id; document.getElementById('mtg-topic').value = meeting.topic;
-            document.getElementById('mtg-date').value = meeting.date; document.getElementById('mtg-time').value = meeting.time;
-            document.getElementById('mtg-location').value = meeting.location || '';
-            document.getElementById('mtg-online-link').value = meeting.onlineLink || '';
-            document.getElementById('mtg-hybrid-enabled').checked = !!meeting.hybridEnabled;
-            document.getElementById('mtg-upload-roles').value = meeting.uploadRoles || 'admin';
-            document.getElementById('meeting-form-title').innerHTML = '<i class="fa-solid fa-pen-to-square text-apple-muted"></i> แก้ไขการประชุม';
-            window.scrollTo({top: 0, behavior: 'smooth'});
-        }
-
-        function resetMeetingForm() {
-            document.getElementById('form-meeting').reset(); document.getElementById('mtg-id').value = "";
-            document.getElementById('mtg-location').value = "";
-            document.getElementById('mtg-online-link').value = "";
-            document.getElementById('mtg-upload-roles').value = 'admin';
-            document.getElementById('mtg-hybrid-enabled').checked = false;
-            document.getElementById('meeting-form-title').innerHTML = '<i class="fa-solid fa-calendar-plus text-apple-muted"></i> เพิ่มการประชุมใหม่';
-        }
-
         function deleteMeeting(id) {
             if (!guardManagePermission()) return;
             Swal.fire({
@@ -1518,73 +1433,6 @@
                     renderAdminMeetingsList(); populateMeetingDropdowns();
                 }
             });
-        }
-
-        function renderAdminMeetingsList() {
-            const tbody = document.getElementById('admin-meetings-list'); tbody.innerHTML = '';
-            if (db.meetings.length === 0) { tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-apple-muted">ไม่มีข้อมูลการประชุม</td></tr>`; return; }
-            const canManage = canManageAdminData();
-            const statusFilter = document.getElementById('meeting-status-filter') ? document.getElementById('meeting-status-filter').value : 'all';
-            let sortedMtg = [...db.meetings].sort((a,b) => new Date(b.date) - new Date(a.date));
-            if (statusFilter === 'active') sortedMtg = sortedMtg.filter(m => m.isActive !== false);
-            if (statusFilter === 'inactive') sortedMtg = sortedMtg.filter(m => m.isActive === false);
-
-            if (sortedMtg.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-apple-muted">ไม่พบรายการประชุมตามตัวกรองที่เลือก</td></tr>`;
-                return;
-            }
-
-            sortedMtg.forEach(m => {
-                const isActive = m.isActive !== false;
-                const agendaCell = m.agendaUrl
-                    ? `<div class="flex items-center gap-2"><a href="${m.agendaUrl}" target="_blank" class="text-xs text-blue-600 underline truncate max-w-[120px]" title="${m.agendaName || 'วาระการประชุม'}">${m.agendaName || 'ดาวน์โหลด'}</a>${canManage ? `<button onclick="triggerAgendaUpload('${m.id}')" class="text-xs bg-apple-gray px-2 py-1 rounded-full border border-apple-border hover:bg-ems-yellow transition-colors"><i class="fa-solid fa-rotate"></i></button>` : ''}</div>`
-                    : (canManage ? `<button onclick="triggerAgendaUpload('${m.id}')" class="text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-upload mr-1"></i> อัปโหลด</button>` : '<span class="text-xs text-apple-muted">-</span>');
-                const activeBadge = canManage
-                    ? (isActive
-                        ? `<button onclick="toggleMeetingActive('${m.id}', false)" title="คลิกเพื่อปิดการรับตอบสำหรับการประชุมนี้" class="inline-flex items-center gap-1 text-xs font-semibold bg-green-100 text-green-800 px-3 py-1.5 rounded-full border border-green-300 hover:bg-green-200 transition-colors"><span class="w-2 h-2 rounded-full bg-green-600"></span>Active</button>`
-                        : `<button onclick="toggleMeetingActive('${m.id}', true)" title="คลิกเพื่อเปิดการรับตอบสำหรับการประชุมนี้อีกครั้ง" class="inline-flex items-center gap-1 text-xs font-semibold bg-red-100 text-red-700 px-3 py-1.5 rounded-full border border-red-300 hover:bg-red-200 transition-colors"><span class="w-2 h-2 rounded-full bg-red-500"></span>Inactive</button>`)
-                    : (isActive
-                        ? `<span class="inline-flex items-center gap-1 text-xs font-semibold bg-green-100 text-green-800 px-3 py-1.5 rounded-full border border-green-300"><span class="w-2 h-2 rounded-full bg-green-600"></span>Active</span>`
-                        : `<span class="inline-flex items-center gap-1 text-xs font-semibold bg-red-100 text-red-700 px-3 py-1.5 rounded-full border border-red-300"><span class="w-2 h-2 rounded-full bg-red-500"></span>Inactive</span>`);
-                const actionButtons = canManage
-                    ? `<button onclick="editMeeting('${m.id}')" class="w-8 h-8 rounded-full bg-white border border-apple-border text-apple-text hover:bg-apple-gray transition-colors mx-1"><i class="fa-solid fa-pen text-xs"></i></button>
-                            <button onclick="deleteMeeting('${m.id}')" class="w-8 h-8 rounded-full bg-white border border-apple-border text-ems-red hover:bg-red-50 transition-colors"><i class="fa-solid fa-trash text-xs"></i></button>`
-                    : '<span class="text-xs text-apple-muted">ดูอย่างเดียว</span>';
-                const row = `
-                    <tr class="group hover:bg-apple-gray transition-colors ${isActive ? '' : 'opacity-70'}">
-                        <td class="py-4 px-2 align-top"><p class="font-medium text-apple-text">${m.topic}</p>${m.hybridEnabled ? '<span class="inline-block mt-1 text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Hybrid</span>' : ''}</td>
-                        <td class="py-4 px-2 align-top text-sm"><p>${formatDateThai(m.date)}</p><p class="text-apple-muted">${m.time} น.</p></td>
-                        <td class="py-4 px-2 align-top text-sm text-apple-muted max-w-[150px] truncate" title="${m.location}">${m.location}</td>
-                        <td class="py-4 px-2 align-top text-sm">${activeBadge}</td>
-                        <td class="py-4 px-2 align-top text-sm">${agendaCell}</td>
-                        <td class="py-4 px-2 align-top text-right whitespace-nowrap">
-                            ${actionButtons}
-                        </td>
-                    </tr>`;
-                tbody.insertAdjacentHTML('beforeend', row);
-            });
-        }
-
-        async function toggleMeetingActive(mtgId, nextState) {
-            if (!guardManagePermission()) return;
-            const meetingIndex = db.meetings.findIndex(m => m.id === mtgId);
-            if (meetingIndex < 0) return;
-
-            db.meetings[meetingIndex].isActive = !!nextState;
-            renderAdminMeetingsList();
-            populateMeetingDropdowns();
-
-            try {
-                const saved = await callServerAsync('setMeetingActiveStatus', [mtgId, !!nextState]);
-                if (!saved) throw new Error('Meeting not found on server');
-                await refreshDbFromServer();
-            } catch (err) {
-                console.error('Failed to update meeting status:', err);
-                db.meetings[meetingIndex].isActive = !nextState;
-                renderAdminMeetingsList();
-                populateMeetingDropdowns();
-                showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถอัปเดตสถานะ Active/Inactive ได้');
-            }
         }
 
         function getMeetingById(mtgId) {
@@ -1625,73 +1473,6 @@
             document.getElementById('report-file-input').click();
         }
 
-        function handleAgendaUpload(e) {
-            if (!guardManagePermission()) return;
-            const file = e.target.files[0];
-            if (!file || !currentAgendaTargetMeetingId) return;
-            const mtgId = currentAgendaTargetMeetingId;
-            const mtgIndex = db.meetings.findIndex(m => m.id === mtgId);
-            if (mtgIndex < 0) return;
-
-            document.getElementById('global-loader').classList.remove('hidden');
-            document.getElementById('global-loader').style.opacity = '1';
-            document.querySelector('#global-loader h2').innerText = 'กำลังอัปโหลดวาระประชุม...';
-
-            const reader = new FileReader();
-            reader.onload = function(ev) {
-                const base64Data = ev.target.result.split(',')[1];
-                const meeting = db.meetings[mtgIndex];
-                const oldFileId = meeting.agendaFileId || '';
-                const allowedRoles = getAllowedUploadRolesForMeeting(mtgId);
-
-                if (true) {
-                    callServer('uploadMeetingAgendaToDrive', [base64Data, file.name, mtgId, oldFileId, currentAdminRole, allowedRoles], function(result) {
-                            if (result.success) {
-                                db.meetings[mtgIndex].agendaUrl = result.url;
-                                db.meetings[mtgIndex].agendaName = result.name;
-                                db.meetings[mtgIndex].agendaFileId = result.fileId;
-
-                                callServer('saveMeetingAgendaToServer', [mtgId, result.url, result.name, result.fileId], function(saved) {
-                                        document.getElementById('global-loader').classList.add('hidden');
-                                        if (!saved) {
-                                            showAlert('warning', 'อัปเดตบางส่วน', 'อัปโหลดไฟล์สำเร็จ แต่ไม่พบรายการประชุมสำหรับบันทึกวาระ');
-                                            return;
-                                        }
-
-                                        // โหลดข้อมูลล่าสุดจาก server ป้องกันวาระหายจาก state ไม่ตรงกัน
-                                        callServer('getInitialData', [], function(serverData) {
-                                                db = serverData;
-                                                renderAdminMeetingsList();
-                                                populateMeetingDropdowns();
-                                                showAlert('success', 'อัปโหลดสำเร็จ', 'ระบบแนบไฟล์วาระการประชุมเรียบร้อยแล้ว');
-                                            }, function() {
-                                                // ถ้ารีเฟรชไม่สำเร็จ ให้แสดงจาก local state ก่อน
-                                                renderAdminMeetingsList();
-                                                showAlert('success', 'อัปโหลดสำเร็จ', 'บันทึกวาระแล้ว แต่รีเฟรชข้อมูลล่าสุดไม่สำเร็จ');
-                                            });
-                                    }, function() {
-                                        document.getElementById('global-loader').classList.add('hidden');
-                                        showAlert('warning', 'อัปเดตบางส่วน', 'อัปโหลดไฟล์สำเร็จ แต่บันทึกวาระลงฐานข้อมูลไม่สำเร็จ');
-                                    });
-                            } else {
-                                document.getElementById('global-loader').classList.add('hidden');
-                                showAlert('error', 'อัปโหลดไม่สำเร็จ', result.error || 'ไม่สามารถอัปโหลดไฟล์ได้');
-                            }
-                        }, function() {
-                            document.getElementById('global-loader').classList.add('hidden');
-                            showAlert('error', 'เชื่อมต่อไม่สำเร็จ', 'ไม่สามารถเชื่อมต่อกับ Server ได้');
-                        });
-                } else {
-                    db.meetings[mtgIndex].agendaUrl = ev.target.result;
-                    db.meetings[mtgIndex].agendaName = file.name;
-                    renderAdminMeetingsList();
-                    document.getElementById('global-loader').classList.add('hidden');
-                }
-            };
-            reader.readAsDataURL(file);
-            document.getElementById('agenda-file-input').value = '';
-        }
-
         // ================= ADMIN: ATTENDEES (SYNC SERVER) =================
         function populateMeetingDropdowns() {
             const adminSelect = document.getElementById('admin-select-meeting');
@@ -1701,7 +1482,7 @@
             let options = `<option value="">-- กรุณาเลือกการประชุม --</option>`;
             let filterOptions = `<option value="all">-- แสดงประวัติการตอบรับทั้งหมด --</option>`;
             db.meetings.forEach(m => {
-                const optStr = `<option value="${m.id}">${m.topic} (${formatDateThai(m.date)})</option>`;
+                const optStr = `<option value="${escapeHtml(m.id)}">${escapeHtml(m.topic)} (${formatDateThai(m.date)})</option>`;
                 if (m.isActive !== false) options += optStr;
                 filterOptions += optStr;
             });
@@ -1761,7 +1542,7 @@
             if(users.length === 0) { list.innerHTML = `<li class="py-8 text-center text-apple-muted">ยังไม่มีรายชื่อในระบบ</li>`; return; }
 
             users.forEach((user, idx) => {
-                const userNameSafe = user.name.replace(/'/g, "\\'");
+                const userNameSafe = escapeHtml(escapeJsString(user.name));
                 const uploadBtnId = `upload-btn-${mtgId}-${idx}`;
                 let fileUI = user.pdfUrl 
                     ? `<div class="flex items-center gap-2">
@@ -1781,8 +1562,8 @@
                         <div class="flex items-center gap-3">
                             <span class="text-apple-muted w-5 text-right text-sm">${idx + 1}.</span>
                             <div class="min-w-0">
-                                <span class="font-medium block">${user.name}</span>
-                                ${user.email ? `<span class="text-xs text-apple-muted block truncate"><i class="fa-regular fa-envelope mr-1"></i>${user.email}</span>` : ''}
+                                <span class="font-medium block">${escapeHtml(user.name)}</span>
+                                ${user.email ? `<span class="text-xs text-apple-muted block truncate"><i class="fa-regular fa-envelope mr-1"></i>${escapeHtml(user.email)}</span>` : ''}
                             </div>
                         </div>
                         <div class="flex items-center gap-3 ml-8 sm:ml-0">
@@ -2239,7 +2020,7 @@
 
             filteredResponses.forEach(r => {
                 const modeLabel = r.attendanceMode ? ` (${String(r.attendanceMode).toLowerCase() === 'online' ? 'Online' : 'Onsite'})` : '';
-                const statusBadge = r.status === 'attend' ? `<span class="bg-green-100 text-ems-green px-2 py-1 rounded-md text-xs font-semibold"><i class="fa-solid fa-check mr-1"></i> เข้าร่วม${modeLabel}</span>` : `<span class="bg-red-100 text-ems-red px-2 py-1 rounded-md text-xs font-semibold" title="${r.reason}"><i class="fa-solid fa-xmark mr-1"></i> ไม่เข้าร่วม</span>`;
+                const statusBadge = r.status === 'attend' ? `<span class="bg-green-100 text-ems-green px-2 py-1 rounded-md text-xs font-semibold"><i class="fa-solid fa-check mr-1"></i> เข้าร่วม${modeLabel}</span>` : `<span class="bg-red-100 text-ems-red px-2 py-1 rounded-md text-xs font-semibold" title="${escapeHtml(r.reason)}"><i class="fa-solid fa-xmark mr-1"></i> ไม่เข้าร่วม</span>`;
                 const actionButtons = canDeleteHistory
                     ? `<button onclick="viewHistoryDetail('${r.id}')" class="text-xs bg-white border border-apple-border hover:bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full transition-colors whitespace-nowrap shadow-sm"><i class="fa-solid fa-circle-info mr-1"></i> รายละเอียด</button>
                             <button onclick="printAdminResponse('${r.id}')" class="text-xs bg-white border border-apple-border hover:bg-apple-border text-apple-text px-3 py-1.5 rounded-full transition-colors whitespace-nowrap shadow-sm ml-2"><i class="fa-solid fa-print text-apple-muted mr-1"></i> PDF</button>
@@ -2248,10 +2029,10 @@
                             <button onclick="printAdminResponse('${r.id}')" class="text-xs bg-white border border-apple-border hover:bg-apple-border text-apple-text px-3 py-1.5 rounded-full transition-colors whitespace-nowrap shadow-sm ml-2"><i class="fa-solid fa-print text-apple-muted mr-1"></i> PDF</button>`;
                 const row = `
                     <tr class="hover:bg-apple-gray transition-colors">
-                        <td class="py-3 px-2 font-medium">${r.name}</td>
-                        <td class="py-3 px-2 text-apple-muted truncate max-w-[200px]" title="${r.topic}">${r.topic}</td>
+                        <td class="py-3 px-2 font-medium">${escapeHtml(r.name)}</td>
+                        <td class="py-3 px-2 text-apple-muted truncate max-w-[200px]" title="${escapeHtml(r.topic)}">${escapeHtml(r.topic)}</td>
                         <td class="py-3 px-2">${statusBadge}</td>
-                        <td class="py-3 px-2 text-apple-muted text-xs">${r.timestamp}</td>
+                        <td class="py-3 px-2 text-apple-muted text-xs">${escapeHtml(r.timestamp)}</td>
                         <td class="py-3 px-2 text-right">
                             ${actionButtons}
                         </td>
@@ -2289,17 +2070,17 @@
                 title: 'รายละเอียดการตอบรับ',
                 html: `
                     <div class="text-left text-sm space-y-2">
-                        <p><b>รหัส:</b> ${data.id || '-'}</p>
-                        <p><b>ชื่อผู้ตอบรับ:</b> ${data.name || '-'}</p>
-                        <p><b>หัวข้อประชุม:</b> ${data.topic || '-'}</p>
-                        <p><b>วันที่:</b> ${data.date || '-'}</p>
-                        <p><b>เวลา:</b> ${data.time || '-'} น.</p>
-                        <p><b>สถานที่:</b> ${data.location || '-'}</p>
+                        <p><b>รหัส:</b> ${escapeHtml(data.id || '-')}</p>
+                        <p><b>ชื่อผู้ตอบรับ:</b> ${escapeHtml(data.name || '-')}</p>
+                        <p><b>หัวข้อประชุม:</b> ${escapeHtml(data.topic || '-')}</p>
+                        <p><b>วันที่:</b> ${escapeHtml(data.date || '-')}</p>
+                        <p><b>เวลา:</b> ${escapeHtml(data.time || '-')} น.</p>
+                        <p><b>สถานที่:</b> ${escapeHtml(data.location || '-')}</p>
                         <p><b>สถานะ:</b> ${statusText}</p>
                         <p><b>รูปแบบการเข้าร่วม:</b> ${modeText}</p>
                         <p><b>อีเมล:</b> ${escapeHtml(data.email || '-')}</p>
-                        <p><b>เหตุผล:</b> ${data.reason || '-'}</p>
-                        <p><b>เวลาที่บันทึก:</b> ${data.timestamp || '-'}</p>
+                        <p><b>เหตุผล:</b> ${escapeHtml(data.reason || '-')}</p>
+                        <p><b>เวลาที่บันทึก:</b> ${escapeHtml(data.timestamp || '-')}</p>
                     </div>
                 `,
                 confirmButtonText: 'ปิด',
@@ -2378,38 +2159,6 @@
             applyAdminRolePermissions();
         }
 
-        function renderUsersList() {
-            const tbody = document.getElementById('admin-users-list');
-            const countEl = document.getElementById('user-count');
-            if (!tbody || !countEl) return;
-
-            const users = [...(db.users || [])].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'th'));
-            countEl.innerText = users.length;
-            tbody.innerHTML = '';
-
-            if (users.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" class="text-center py-8 text-apple-muted">ยังไม่มีผู้ใช้งาน</td></tr>';
-                return;
-            }
-
-            const canManageUsers = isAdminRole();
-            users.forEach(u => {
-                const row = `
-                    <tr class="hover:bg-apple-gray transition-colors">
-                        <td class="py-3 px-2 font-medium">${u.name || '-'}</td>
-                        <td class="py-3 px-2"><span class="text-xs bg-apple-gray px-2 py-1 rounded-full">${normalizeRoleLabel(u.role)}</span></td>
-                        <td class="py-3 px-2 text-apple-muted">••••••</td>
-                        <td class="py-3 px-2 text-right">
-                            ${canManageUsers
-                                ? `<button onclick="editUser('${u.id}')" class="text-xs bg-white border border-apple-border hover:bg-yellow-50 text-apple-text px-3 py-1.5 rounded-full transition-colors shadow-sm"><i class="fa-solid fa-pen mr-1"></i> แก้ไข</button>
-                                   <button onclick="deleteUser('${u.id}')" class="text-xs bg-white border border-apple-border hover:bg-red-50 text-ems-red px-3 py-1.5 rounded-full transition-colors shadow-sm ml-2"><i class="fa-solid fa-trash-can mr-1"></i> ลบ</button>`
-                                : '<span class="text-xs text-apple-muted">ดูอย่างเดียว</span>'}
-                        </td>
-                    </tr>`;
-                tbody.insertAdjacentHTML('beforeend', row);
-            });
-        }
-
         function editUser(userId) {
             if (!guardUsersPermission()) return;
             const user = (db.users || []).find(u => u.id === userId);
@@ -2425,56 +2174,6 @@
             document.getElementById('user-form-title').innerHTML = '<i class="fa-solid fa-user-pen text-apple-muted"></i> แก้ไขผู้ใช้งาน';
             document.getElementById('save-user-btn').innerHTML = '<i class="fa-solid fa-check mr-1"></i> อัปเดตผู้ใช้งาน';
             window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-
-        async function handleSaveUser(e) {
-            e.preventDefault();
-            if (!guardUsersPermission()) return;
-
-            const userId = String(document.getElementById('usr-id').value || '').trim();
-            const name = String(document.getElementById('usr-name').value || '').trim();
-            const role = String(document.getElementById('usr-role').value || '').trim().toLowerCase();
-            const pin = String(document.getElementById('usr-pin').value || '').trim();
-            const isEdit = !!userId;
-
-            if (!name) {
-                showAlert('error', 'ข้อมูลไม่ครบ', 'กรุณาระบุชื่อผู้ใช้งาน');
-                return;
-            }
-
-            if (!isEdit && !/^\d{4,10}$/.test(pin)) {
-                showAlert('error', 'PIN ไม่ถูกต้อง', 'PIN ต้องเป็นตัวเลข 4-10 หลัก');
-                return;
-            }
-            if (isEdit && pin && !/^\d{4,10}$/.test(pin)) {
-                showAlert('error', 'PIN ไม่ถูกต้อง', 'PIN ต้องเป็นตัวเลข 4-10 หลัก');
-                return;
-            }
-
-            const finalId = isEdit ? userId : ('U' + Date.now());
-            const oldUser = (db.users || []).find(u => u.id === finalId);
-            const pinHash = pin ? await getSHA256Hash(pin) : String((oldUser && oldUser.pinHash) || '');
-
-            if (!pinHash || pinHash.length !== 64) {
-                showAlert('error', 'ข้อมูลไม่ครบ', 'กรุณาระบุ PIN สำหรับผู้ใช้งานนี้');
-                return;
-            }
-
-            const payload = { id: finalId, name, role, pinHash };
-
-            if (!db.users) db.users = [];
-            const idx = db.users.findIndex(u => u.id === finalId);
-            if (idx > -1) db.users[idx] = payload;
-            else db.users.push(payload);
-
-            callServer('saveUserToServer', [payload], function() {
-                refreshRolePinHashesFromDb();
-                renderUsersList();
-                resetUserForm();
-                showAlert('success', 'บันทึกสำเร็จ', 'บันทึกข้อมูลผู้ใช้งานเรียบร้อยแล้ว');
-            }, function(err) {
-                showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถบันทึกผู้ใช้งานได้: ' + (err || 'Unknown error'));
-            });
         }
 
         async function deleteUser(userId) {
@@ -2527,60 +2226,6 @@
         }
 
         // ================= USER AREA (SYNC SERVER) =================
-        function handleUserMeetingSelect() {
-            const mtgId = document.getElementById('user-select-meeting').value;
-            const form = document.getElementById('user-response-form'); const nameSelect = document.getElementById('user-name'); const dlSection = document.getElementById('invitation-download-section');
-            const agendaSection = document.getElementById('agenda-download-section');
-            const agendaBtn = document.getElementById('download-agenda-btn');
-            const agendaName = document.getElementById('agenda-file-name');
-            dlSection.classList.add('hidden');
-            agendaSection.classList.add('hidden');
-            if (!mtgId) { form.classList.add('hidden'); return; }
-
-            const meeting = db.meetings.find(m => m.id === mtgId);
-            if(meeting) {
-                document.getElementById('u-mtg-topic').innerText = meeting.topic;
-                document.getElementById('u-mtg-date').innerText = formatDateThai(meeting.date);
-                document.getElementById('u-mtg-time').innerText = meeting.time;
-                document.getElementById('u-mtg-location').innerText = meeting.location || '-';
-                const onlineRow = document.getElementById('u-mtg-online-row');
-                const onlineLink = document.getElementById('u-mtg-online-link');
-                if (meeting.onlineLink) {
-                    onlineLink.href = meeting.onlineLink;
-                    onlineLink.innerText = 'เข้าร่วมออนไลน์';
-                    onlineRow.classList.remove('hidden');
-                } else {
-                    onlineRow.classList.add('hidden');
-                }
-
-                if (meeting.agendaUrl) {
-                    agendaBtn.href = meeting.agendaUrl;
-                    agendaName.innerText = meeting.agendaName || 'ไฟล์วาระการประชุม';
-                    agendaSection.classList.remove('hidden');
-                } else {
-                    agendaSection.classList.add('hidden');
-                }
-            }
-
-            const users = db.attendees[mtgId] || []; let nameOptions = `<option value="">-- แตะเพื่อค้นหาชื่อ --</option>`;
-            users.sort((a, b) => a.name.localeCompare(b.name, 'th')).forEach(u => { nameOptions += `<option value="${u.name}">${u.name}</option>`; });
-            nameSelect.innerHTML = nameOptions;
-
-            document.querySelectorAll('input[name="attendance"]').forEach(r => r.checked = false);
-            document.getElementById('reason-container').classList.add('hidden');
-            document.getElementById('user-reason').removeAttribute('required');
-            document.getElementById('attendance-section').classList.add('hidden');
-            document.getElementById('attendance-mode-container').classList.add('hidden');
-            document.getElementById('attendance-mode').value = '';
-            document.getElementById('response-locked-banner').classList.add('hidden');
-            document.getElementById('response-locked-summary').innerText = 'ระบบล็อกตัวเลือกไว้เพื่อป้องกันการบันทึกซ้ำ';
-            currentEditableResponseId = null;
-            isEditingExistingResponse = false;
-            setResponseFormLocked(false);
-            updateSubmitButtonState();
-            form.classList.remove('hidden');
-        }
-
         function handleUserNameSelect() {
             const mtgId = document.getElementById('user-select-meeting').value; const userName = document.getElementById('user-name').value;
             const dlSection = document.getElementById('invitation-download-section'); const dlBtn = document.getElementById('download-invitation-btn');
@@ -2811,13 +2456,13 @@
             if (data.status === 'attend' && modeText === 'Online') {
                 const meetingLink = data.onlineLink && data.onlineLink !== '#' ? data.onlineLink : '';
                 const meetingLinkHtml = meetingLink
-                    ? `<a href="${meetingLink}" target="_blank" class="text-blue-600 underline break-all">${meetingLink}</a>`
+                    ? `<a href="${escapeHtml(meetingLink)}" target="_blank" rel="noopener" class="text-blue-600 underline break-all">${escapeHtml(meetingLink)}</a>`
                     : '<span class="text-apple-muted">-</span>';
                 summaryHtml = `
                     <div class="mt-3 text-left bg-apple-gray/60 rounded-xl p-3 text-sm space-y-1">
-                        <p><b>หัวข้อ:</b> ${data.topic || '-'}</p>
-                        <p><b>วัน:</b> ${data.date || '-'}</p>
-                        <p><b>เวลา:</b> ${data.time || '-'} น.</p>
+                        <p><b>หัวข้อ:</b> ${escapeHtml(data.topic || '-')}</p>
+                        <p><b>วัน:</b> ${escapeHtml(data.date || '-')}</p>
+                        <p><b>เวลา:</b> ${escapeHtml(data.time || '-')} น.</p>
                         <p><b>Meeting link:</b> ${meetingLinkHtml}</p>
                     </div>`;
             }
@@ -2825,10 +2470,10 @@
             if (data.status === 'attend' && modeText === 'Onsite') {
                 summaryHtml = `
                     <div class="mt-3 text-left bg-apple-gray/60 rounded-xl p-3 text-sm space-y-1">
-                        <p><b>หัวข้อ:</b> ${data.topic || '-'}</p>
-                        <p><b>วัน:</b> ${data.date || '-'}</p>
-                        <p><b>เวลา:</b> ${data.time || '-'} น.</p>
-                        <p><b>สถานที่:</b> ${data.location || '-'}</p>
+                        <p><b>หัวข้อ:</b> ${escapeHtml(data.topic || '-')}</p>
+                        <p><b>วัน:</b> ${escapeHtml(data.date || '-')}</p>
+                        <p><b>เวลา:</b> ${escapeHtml(data.time || '-')} น.</p>
+                        <p><b>สถานที่:</b> ${escapeHtml(data.location || '-')}</p>
                     </div>`;
             }
 
@@ -2837,7 +2482,7 @@
                 : '';
 
             Swal.fire({
-                icon: 'success', title: 'บันทึกเรียบร้อย', html: `<p class="mb-2">ระบบได้รับข้อมูลของ <b>${data.name}</b> แล้ว</p><p>สถานะ: ${stHtml}</p>${modeHtml}${summaryHtml}${emailHtml}`,
+                icon: 'success', title: 'บันทึกเรียบร้อย', html: `<p class="mb-2">ระบบได้รับข้อมูลของ <b>${escapeHtml(data.name)}</b> แล้ว</p><p>สถานะ: ${stHtml}</p>${modeHtml}${summaryHtml}${emailHtml}`,
                 showCancelButton: true, confirmButtonColor: '#1D1D1F', cancelButtonColor: '#E5E5EA', confirmButtonText: '<i class="fa-solid fa-print mr-1"></i> พิมพ์ / Save PDF', cancelButtonText: '<span class="text-apple-text">กลับหน้าหลัก</span>', customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white', cancelButton: 'rounded-full px-6' }
             }).then((result) => { if (result.isConfirmed) executePrint(data, false); else showView('role-selection'); });
         }
@@ -2917,16 +2562,16 @@
                 }
             }
 
-            setGlobalLoading(true, 'Saving meeting...');
+            setGlobalLoading(true, 'กำลังบันทึกข้อมูลการประชุม...');
             try {
                 const saved = await callServerAsync('saveMeetingToServer', [meeting]);
                 if (!saved) throw new Error('saveMeetingToServer returned false');
                 await refreshDbFromServer();
                 resetMeetingForm();
-                showAlert('success', 'Saved', 'Meeting data has been saved to server.');
+                showAlert('success', 'บันทึกสำเร็จ', 'ระบบบันทึกข้อมูลการประชุมเรียบร้อยแล้ว');
             } catch (err) {
                 console.error('Failed to save meeting:', err);
-                showAlert('error', 'Save failed', 'Unable to save meeting data to server.');
+                showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถบันทึกข้อมูลการประชุมได้');
             } finally {
                 setGlobalLoading(false);
             }
@@ -2943,7 +2588,7 @@
             renderAdminMeetingsList();
             populateMeetingDropdowns();
 
-            setGlobalLoading(true, 'Saving status...');
+            setGlobalLoading(true, 'กำลังบันทึกสถานะ...');
             try {
                 const saved = await callServerAsync('setMeetingActiveStatus', [mtgId, !!nextState]);
                 if (!saved) throw new Error('Meeting not found on server');
@@ -2953,7 +2598,7 @@
                 db.meetings[meetingIndex].isActive = previousState;
                 renderAdminMeetingsList();
                 populateMeetingDropdowns();
-                showAlert('error', 'Save failed', 'Unable to update Active/Inactive status on server.');
+                showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถอัปเดตสถานะ Active/Inactive ได้');
             } finally {
                 setGlobalLoading(false);
             }
@@ -2969,7 +2614,7 @@
             const mtgIndex = db.meetings.findIndex(m => m.id === mtgId);
             if (mtgIndex < 0) return;
 
-            setGlobalLoading(true, 'Uploading agenda...');
+            setGlobalLoading(true, 'กำลังอัปโหลดวาระประชุม...');
             const reader = new FileReader();
             reader.onload = async function(ev) {
                 try {
@@ -3001,10 +2646,10 @@
                     if (!saved) throw new Error('Meeting not found while saving agenda metadata');
 
                     await refreshDbFromServer();
-                    showAlert('success', 'Uploaded', 'Agenda file has been saved to server.');
+                    showAlert('success', 'อัปโหลดสำเร็จ', 'ระบบแนบไฟล์วาระการประชุมเรียบร้อยแล้ว');
                 } catch (err) {
                     console.error('Failed to upload agenda:', err);
-                    showAlert('error', 'Upload failed', 'Unable to upload and save agenda file.');
+                    showAlert('error', 'อัปโหลดไม่สำเร็จ', 'ไม่สามารถอัปโหลดและบันทึกไฟล์วาระได้');
                 } finally {
                     setGlobalLoading(false);
                     currentAgendaTargetMeetingId = null;
@@ -3015,7 +2660,7 @@
                 setGlobalLoading(false);
                 currentAgendaTargetMeetingId = null;
                 document.getElementById('agenda-file-input').value = '';
-                showAlert('error', 'Read failed', 'Unable to read selected file.');
+                showAlert('error', 'อ่านไฟล์ไม่สำเร็จ', 'ไม่สามารถอ่านไฟล์ที่เลือกได้');
             };
             reader.readAsDataURL(file);
         }
@@ -3030,7 +2675,7 @@
             const mtgIndex = db.meetings.findIndex(m => m.id === mtgId);
             if (mtgIndex < 0) return;
 
-            setGlobalLoading(true, 'Uploading report...');
+            setGlobalLoading(true, 'กำลังอัปโหลดรายงานการประชุม...');
             const reader = new FileReader();
             reader.onload = async function(ev) {
                 try {
@@ -3062,10 +2707,10 @@
                     if (!saved) throw new Error('Meeting not found while saving report metadata');
 
                     await refreshDbFromServer();
-                    showAlert('success', 'Uploaded', 'Meeting report has been saved to server.');
+                    showAlert('success', 'อัปโหลดสำเร็จ', 'ระบบแนบไฟล์รายงานการประชุมเรียบร้อยแล้ว');
                 } catch (err) {
                     console.error('Failed to upload report:', err);
-                    showAlert('error', 'Upload failed', 'Unable to upload and save meeting report.');
+                    showAlert('error', 'อัปโหลดไม่สำเร็จ', 'ไม่สามารถอัปโหลดและบันทึกไฟล์รายงานได้');
                 } finally {
                     setGlobalLoading(false);
                     currentReportTargetMeetingId = null;
@@ -3076,7 +2721,7 @@
                 setGlobalLoading(false);
                 currentReportTargetMeetingId = null;
                 document.getElementById('report-file-input').value = '';
-                showAlert('error', 'Read failed', 'Unable to read selected file.');
+                showAlert('error', 'อ่านไฟล์ไม่สำเร็จ', 'ไม่สามารถอ่านไฟล์ที่เลือกได้');
             };
             reader.readAsDataURL(file);
         }
@@ -3098,7 +2743,7 @@
             if (document.getElementById('mtg-is-active')) {
                 document.getElementById('mtg-is-active').value = meeting.isActive === false ? 'inactive' : 'active';
             }
-            document.getElementById('meeting-form-title').innerHTML = '<i class="fa-solid fa-pen-to-square text-apple-muted"></i> Edit meeting';
+            document.getElementById('meeting-form-title').innerHTML = '<i class="fa-solid fa-pen-to-square text-apple-muted"></i> แก้ไขการประชุม';
             window.scrollTo({top: 0, behavior: 'smooth'});
         }
 
@@ -3112,7 +2757,7 @@
             if (document.getElementById('mtg-is-active')) {
                 document.getElementById('mtg-is-active').value = 'active';
             }
-            document.getElementById('meeting-form-title').innerHTML = '<i class="fa-solid fa-calendar-plus text-apple-muted"></i> Add meeting';
+            document.getElementById('meeting-form-title').innerHTML = '<i class="fa-solid fa-calendar-plus text-apple-muted"></i> เพิ่มการประชุมใหม่';
         }
 
         function renderAdminMeetingsList() {
@@ -3120,7 +2765,7 @@
             tbody.innerHTML = '';
 
             if (db.meetings.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-apple-muted">No meeting data</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-apple-muted">ไม่มีข้อมูลการประชุม</td></tr>`;
                 return;
             }
 
@@ -3131,18 +2776,18 @@
             if (statusFilter === 'inactive') sortedMtg = sortedMtg.filter(m => m.isActive === false);
 
             if (sortedMtg.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-apple-muted">No meetings match this filter</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-apple-muted">ไม่พบรายการประชุมตามตัวกรองที่เลือก</td></tr>`;
                 return;
             }
 
             sortedMtg.forEach(m => {
                 const isActive = m.isActive !== false;
                 const agendaCell = m.agendaUrl
-                    ? `<div class="flex items-center gap-2"><a href="${m.agendaUrl}" target="_blank" class="text-xs text-blue-600 underline truncate max-w-[120px]" title="${m.agendaName || 'Agenda'}">${m.agendaName || 'Download'}</a>${canManage ? `<button onclick="triggerAgendaUpload('${m.id}')" class="text-xs bg-apple-gray px-2 py-1 rounded-full border border-apple-border hover:bg-ems-yellow transition-colors"><i class="fa-solid fa-rotate"></i></button>` : ''}</div>`
-                    : (canManage ? `<button onclick="triggerAgendaUpload('${m.id}')" class="text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-upload mr-1"></i> Upload</button>` : '<span class="text-xs text-apple-muted">-</span>');
+                    ? `<div class="flex items-center gap-2"><a href="${escapeHtml(m.agendaUrl)}" target="_blank" rel="noopener" class="text-xs text-blue-600 underline truncate max-w-[120px]" title="${escapeHtml(m.agendaName || 'วาระการประชุม')}">${escapeHtml(m.agendaName || 'ดาวน์โหลด')}</a>${canManage ? `<button onclick="triggerAgendaUpload('${m.id}')" class="text-xs bg-apple-gray px-2 py-1 rounded-full border border-apple-border hover:bg-ems-yellow transition-colors"><i class="fa-solid fa-rotate"></i></button>` : ''}</div>`
+                    : (canManage ? `<button onclick="triggerAgendaUpload('${m.id}')" class="text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-upload mr-1"></i> อัปโหลด</button>` : '<span class="text-xs text-apple-muted">-</span>');
                 const reportCell = m.reportUrl
-                    ? `<div class="flex items-center gap-2"><a href="${m.reportUrl}" target="_blank" class="text-xs text-purple-600 underline truncate max-w-[120px]" title="${m.reportName || 'Report'}">${m.reportName || 'Download'}</a>${canManage ? `<button onclick="triggerReportUpload('${m.id}')" class="text-xs bg-apple-gray px-2 py-1 rounded-full border border-apple-border hover:bg-ems-yellow transition-colors"><i class="fa-solid fa-rotate"></i></button>` : ''}</div>`
-                    : (canManage ? `<button onclick="triggerReportUpload('${m.id}')" class="text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-upload mr-1"></i> Upload</button>` : '<span class="text-xs text-apple-muted">-</span>');
+                    ? `<div class="flex items-center gap-2"><a href="${escapeHtml(m.reportUrl)}" target="_blank" rel="noopener" class="text-xs text-purple-600 underline truncate max-w-[120px]" title="${escapeHtml(m.reportName || 'รายงานการประชุม')}">${escapeHtml(m.reportName || 'ดาวน์โหลด')}</a>${canManage ? `<button onclick="triggerReportUpload('${m.id}')" class="text-xs bg-apple-gray px-2 py-1 rounded-full border border-apple-border hover:bg-ems-yellow transition-colors"><i class="fa-solid fa-rotate"></i></button>` : ''}</div>`
+                    : (canManage ? `<button onclick="triggerReportUpload('${m.id}')" class="text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-upload mr-1"></i> อัปโหลด</button>` : '<span class="text-xs text-apple-muted">-</span>');
 
                 const statusControl = canManage
                     ? `<div class="flex items-center gap-2">
@@ -3161,13 +2806,13 @@
                 const actionButtons = canManage
                     ? `<button onclick="editMeeting('${m.id}')" class="w-8 h-8 rounded-full bg-white border border-apple-border text-apple-text hover:bg-apple-gray transition-colors mx-1"><i class="fa-solid fa-pen text-xs"></i></button>
                        <button onclick="deleteMeeting('${m.id}')" class="w-8 h-8 rounded-full bg-white border border-apple-border text-ems-red hover:bg-red-50 transition-colors"><i class="fa-solid fa-trash text-xs"></i></button>`
-                    : '<span class="text-xs text-apple-muted">View only</span>';
+                    : '<span class="text-xs text-apple-muted">ดูอย่างเดียว</span>';
 
                 const row = `
                     <tr class="group hover:bg-apple-gray transition-colors ${isActive ? '' : 'opacity-70'}">
-                        <td class="py-4 px-2 align-top"><p class="font-medium text-apple-text">${m.topic}</p>${m.hybridEnabled ? '<span class="inline-block mt-1 text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Hybrid</span>' : ''}</td>
-                        <td class="py-4 px-2 align-top text-sm"><p>${formatDateThai(m.date)}</p><p class="text-apple-muted">${m.time} น.</p></td>
-                        <td class="py-4 px-2 align-top text-sm text-apple-muted max-w-[150px] truncate" title="${m.location}">${m.location}</td>
+                        <td class="py-4 px-2 align-top"><p class="font-medium text-apple-text">${escapeHtml(m.topic)}</p>${m.hybridEnabled ? '<span class="inline-block mt-1 text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Hybrid</span>' : ''}</td>
+                        <td class="py-4 px-2 align-top text-sm"><p>${formatDateThai(m.date)}</p><p class="text-apple-muted">${escapeHtml(m.time)} น.</p></td>
+                        <td class="py-4 px-2 align-top text-sm text-apple-muted max-w-[150px] truncate" title="${escapeHtml(m.location)}">${escapeHtml(m.location)}</td>
                         <td class="py-4 px-2 align-top text-sm">${statusControl}</td>
                         <td class="py-4 px-2 align-top text-sm">${agendaCell}</td>
                         <td class="py-4 px-2 align-top text-sm">${reportCell}</td>
@@ -3198,18 +2843,18 @@
             renderAdminMeetingsList();
             populateMeetingDropdowns();
 
-            setGlobalLoading(true, 'Saving status...');
+            setGlobalLoading(true, 'กำลังบันทึกสถานะ...');
             try {
                 const saved = await callServerAsync('setMeetingActiveStatus', [mtgId, nextState]);
                 if (!saved) throw new Error('Meeting not found on server');
                 await refreshDbFromServer();
-                showAlert('success', 'Saved', `Status changed to ${nextState ? 'Active' : 'Inactive'}.`);
+                showAlert('success', 'บันทึกสำเร็จ', `เปลี่ยนสถานะเป็น ${nextState ? 'Active' : 'Inactive'} แล้ว`);
             } catch (err) {
                 console.error('Failed to save meeting status:', err);
                 db.meetings[meetingIndex].isActive = previousState;
                 renderAdminMeetingsList();
                 populateMeetingDropdowns();
-                showAlert('error', 'Save failed', 'Unable to update Active/Inactive status on server.');
+                showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถอัปเดตสถานะ Active/Inactive ได้');
             } finally {
                 setGlobalLoading(false);
             }
@@ -3225,7 +2870,7 @@
             tbody.innerHTML = '';
 
             if (users.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" class="text-center py-8 text-apple-muted">No users</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center py-8 text-apple-muted">ยังไม่มีผู้ใช้งาน</td></tr>';
                 return;
             }
 
@@ -3234,20 +2879,20 @@
                 const canShowPin = canManageUsers && String(u.pinPlain || '').trim();
                 const pinCell = canManageUsers
                     ? `<button onclick="showUserPin('${u.id}')" class="text-xs bg-white border border-apple-border hover:bg-apple-gray text-apple-text px-3 py-1.5 rounded-full transition-colors shadow-sm">
-                            <i class="fa-solid fa-eye mr-1"></i> View PIN
-                       </button>${canShowPin ? '' : '<span class="text-xs text-apple-muted ml-2">reset PIN first</span>'}`
+                            <i class="fa-solid fa-eye mr-1"></i> ดู PIN
+                       </button>${canShowPin ? '' : '<span class="text-xs text-apple-muted ml-2">ตั้ง PIN ใหม่ก่อนจึงจะดูได้</span>'}`
                     : '<span class="text-apple-muted">******</span>';
 
                 const row = `
                     <tr class="hover:bg-apple-gray transition-colors">
-                        <td class="py-3 px-2 font-medium">${u.name || '-'}</td>
-                        <td class="py-3 px-2"><span class="text-xs bg-apple-gray px-2 py-1 rounded-full">${normalizeRoleLabel(u.role)}</span></td>
+                        <td class="py-3 px-2 font-medium">${escapeHtml(u.name || '-')}</td>
+                        <td class="py-3 px-2"><span class="text-xs bg-apple-gray px-2 py-1 rounded-full">${escapeHtml(normalizeRoleLabel(u.role))}</span></td>
                         <td class="py-3 px-2">${pinCell}</td>
                         <td class="py-3 px-2 text-right">
                             ${canManageUsers
-                                ? `<button onclick="editUser('${u.id}')" class="text-xs bg-white border border-apple-border hover:bg-yellow-50 text-apple-text px-3 py-1.5 rounded-full transition-colors shadow-sm"><i class="fa-solid fa-pen mr-1"></i> Edit</button>
-                                   <button onclick="deleteUser('${u.id}')" class="text-xs bg-white border border-apple-border hover:bg-red-50 text-ems-red px-3 py-1.5 rounded-full transition-colors shadow-sm ml-2"><i class="fa-solid fa-trash-can mr-1"></i> Delete</button>`
-                                : '<span class="text-xs text-apple-muted">View only</span>'}
+                                ? `<button onclick="editUser('${u.id}')" class="text-xs bg-white border border-apple-border hover:bg-yellow-50 text-apple-text px-3 py-1.5 rounded-full transition-colors shadow-sm"><i class="fa-solid fa-pen mr-1"></i> แก้ไข</button>
+                                   <button onclick="deleteUser('${u.id}')" class="text-xs bg-white border border-apple-border hover:bg-red-50 text-ems-red px-3 py-1.5 rounded-full transition-colors shadow-sm ml-2"><i class="fa-solid fa-trash-can mr-1"></i> ลบ</button>`
+                                : '<span class="text-xs text-apple-muted">ดูอย่างเดียว</span>'}
                         </td>
                     </tr>`;
                 tbody.insertAdjacentHTML('beforeend', row);
@@ -3262,17 +2907,17 @@
 
             const pin = String(user.pinPlain || '').trim();
             if (!pin) {
-                showAlert('warning', 'PIN unavailable', 'This user only has a saved PIN hash. Please edit the user and set a new PIN before it can be viewed.');
+                showAlert('warning', 'ไม่สามารถแสดง PIN', 'ผู้ใช้งานนี้มีเฉพาะ PIN แบบเข้ารหัส กรุณาแก้ไขผู้ใช้งานและตั้ง PIN ใหม่ก่อนจึงจะดูได้');
                 return;
             }
 
             Swal.fire({
                 icon: 'info',
-                title: 'User PIN',
+                title: 'PIN ผู้ใช้งาน',
                 html: `<div class="text-left space-y-2">
-                    <p><b>User:</b> ${user.name || '-'}</p>
-                    <p><b>Role:</b> ${normalizeRoleLabel(user.role)}</p>
-                    <div class="bg-apple-gray rounded-2xl px-4 py-3 text-center font-heading text-2xl tracking-widest">${pin}</div>
+                    <p><b>ผู้ใช้งาน:</b> ${escapeHtml(user.name || '-')}</p>
+                    <p><b>Role:</b> ${escapeHtml(normalizeRoleLabel(user.role))}</p>
+                    <div class="bg-apple-gray rounded-2xl px-4 py-3 text-center font-heading text-2xl tracking-widest">${escapeHtml(pin)}</div>
                 </div>`,
                 confirmButtonColor: '#1D1D1F',
                 customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white' }
@@ -3290,17 +2935,17 @@
             const isEdit = !!userId;
 
             if (!name) {
-                showAlert('error', 'Missing data', 'Please enter a user name.');
+                showAlert('error', 'ข้อมูลไม่ครบ', 'กรุณาระบุชื่อผู้ใช้งาน');
                 return;
             }
 
             if (!isEdit && !/^\d{4,10}$/.test(pin)) {
-                showAlert('error', 'Invalid PIN', 'PIN must be 4-10 digits.');
+                showAlert('error', 'PIN ไม่ถูกต้อง', 'PIN ต้องเป็นตัวเลข 4-10 หลัก');
                 return;
             }
 
             if (isEdit && pin && !/^\d{4,10}$/.test(pin)) {
-                showAlert('error', 'Invalid PIN', 'PIN must be 4-10 digits.');
+                showAlert('error', 'PIN ไม่ถูกต้อง', 'PIN ต้องเป็นตัวเลข 4-10 หลัก');
                 return;
             }
 
@@ -3310,13 +2955,13 @@
             const pinHash = pin ? await getSHA256Hash(pin) : String((oldUser && oldUser.pinHash) || '');
 
             if (!pinHash || pinHash.length !== 64) {
-                showAlert('error', 'Missing PIN', 'Please set a PIN for this user.');
+                showAlert('error', 'ข้อมูลไม่ครบ', 'กรุณาระบุ PIN สำหรับผู้ใช้งานนี้');
                 return;
             }
 
             const payload = { id: finalId, name, role, pinHash, pinPlain };
 
-            setGlobalLoading(true, 'Saving user...');
+            setGlobalLoading(true, 'กำลังบันทึกผู้ใช้งาน...');
             try {
                 const saved = await callServerAsync('saveUserToServer', [payload]);
                 if (!saved) throw new Error('saveUserToServer returned false');
@@ -3329,10 +2974,10 @@
                 await refreshRolePinHashesFromDb();
                 renderUsersList();
                 resetUserForm();
-                showAlert('success', 'Saved', 'User data has been saved.');
+                showAlert('success', 'บันทึกสำเร็จ', 'บันทึกข้อมูลผู้ใช้งานเรียบร้อยแล้ว');
             } catch (err) {
                 console.error('Failed to save user:', err);
-                showAlert('error', 'Save failed', 'Unable to save user data.');
+                showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถบันทึกผู้ใช้งานได้');
             } finally {
                 setGlobalLoading(false);
             }
@@ -3363,7 +3008,7 @@
             const mtgId = document.getElementById('user-select-meeting').value;
             const nameSelect = document.getElementById('user-name');
             document.getElementById('user-response-form').classList.toggle('hidden', !mtgId);
-            nameSelect.innerHTML = '<option value="">-- Select name --</option>';
+            nameSelect.innerHTML = '<option value="">-- แตะเพื่อค้นหาชื่อ --</option>';
 
             const dlSection = document.getElementById('invitation-download-section');
             const agendaSection = document.getElementById('agenda-download-section');
@@ -3393,7 +3038,7 @@
                 const onlineLink = document.getElementById('u-mtg-online-link');
                 if (meeting.onlineLink) {
                     onlineLink.href = meeting.onlineLink;
-                    onlineLink.innerText = 'Join online';
+                    onlineLink.innerText = 'เข้าร่วมออนไลน์';
                     onlineRow.classList.remove('hidden');
                 } else {
                     onlineRow.classList.add('hidden');
@@ -3402,22 +3047,22 @@
                 if (meeting.agendaUrl) {
                     agendaBtn.href = meeting.agendaUrl;
                     if (viewAgendaBtn) viewAgendaBtn.href = getPdfViewUrl(meeting.agendaUrl);
-                    agendaName.innerText = meeting.agendaName || 'Meeting agenda file';
+                    agendaName.innerText = meeting.agendaName || 'ไฟล์วาระการประชุม';
                     agendaSection.classList.remove('hidden');
                 }
 
                 if (meeting.reportUrl) {
                     reportBtn.href = meeting.reportUrl;
                     if (viewReportBtn) viewReportBtn.href = getPdfViewUrl(meeting.reportUrl);
-                    reportName.innerText = meeting.reportName || 'Meeting report file';
+                    reportName.innerText = meeting.reportName || 'ไฟล์รายงานการประชุม';
                     reportSection.classList.remove('hidden');
                 }
             }
 
             const users = db.attendees[mtgId] || [];
-            let nameOptions = '<option value="">-- Select name --</option>';
+            let nameOptions = '<option value="">-- แตะเพื่อค้นหาชื่อ --</option>';
             users.sort((a, b) => a.name.localeCompare(b.name, 'th')).forEach(u => {
-                nameOptions += `<option value="${u.name}">${u.name}</option>`;
+                nameOptions += `<option value="${escapeHtml(u.name)}">${escapeHtml(u.name)}</option>`;
             });
             nameSelect.innerHTML = nameOptions;
 
@@ -3563,7 +3208,7 @@
                         <p class="text-xs text-apple-muted">สแกน QR เพื่อเปิดฟอร์มตอบรับส่วนบุคคล</p>
                         <div class="mt-3 flex items-center gap-2 bg-apple-gray rounded-xl px-3 py-2">
                             <input id="swal-qr-link" class="flex-1 bg-transparent text-[11px] text-apple-muted focus:outline-none min-w-0" value="${escapeHtml(url)}" readonly onclick="this.select()">
-                            <button type="button" onclick="copyAttendeeLink('${mtgId.replace(/'/g, "\\'")}', '${name.replace(/'/g, "\\'")}')" class="shrink-0 text-xs font-semibold bg-white border border-apple-border px-3 py-1.5 rounded-full hover:bg-ems-yellow transition-colors"><i class="fa-solid fa-copy mr-1"></i>คัดลอก</button>
+                            <button type="button" onclick="copyAttendeeLink('${escapeHtml(escapeJsString(mtgId))}', '${escapeHtml(escapeJsString(name))}')" class="shrink-0 text-xs font-semibold bg-white border border-apple-border px-3 py-1.5 rounded-full hover:bg-ems-yellow transition-colors"><i class="fa-solid fa-copy mr-1"></i>คัดลอก</button>
                         </div>
                         <p class="text-[10px] text-apple-muted mt-2 opacity-50">QR นี้ไม่มีชื่อในตัว URL — ใช้ได้เฉพาะท่านเท่านั้น</p>
                     </div>
@@ -3619,7 +3264,7 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8">
-<title>QR Codes - ${meetingTitle}</title>
+<title>QR Codes - ${escapeHtml(meetingTitle)}</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600&family=Prompt:wght@600&display=swap" rel="stylesheet">
 <style>
@@ -3646,7 +3291,7 @@ body { font-family: 'Sarabun', sans-serif; background: #fff; padding: 16px; }
 </head>
 <body>
 <div class="page-header">
-    <h1>${meetingTitle}</h1>
+    <h1>${escapeHtml(meetingTitle)}</h1>
     <p>${meetingDate ? meetingDate + ' | ' : ''}QR Code ตอบรับการประชุม รายบุคคล | ${attendeesData.length} คน</p>
 </div>
 <div class="no-print">
