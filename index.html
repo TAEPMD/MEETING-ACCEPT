@@ -1045,7 +1045,38 @@
             });
         }
 
+        // รายการ meeting id ที่กำลัง auto-save สถานะอยู่เบื้องหลัง — ใช้กันข้อมูลโดน refresh ทับก่อนบันทึกเสร็จ
+        const pendingStatusSaves = new Set();
+
+        function notifyStatusSavePending() {
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: 'info',
+                title: 'กำลังบันทึกสถานะอยู่เบื้องหลัง',
+                text: 'ระบบเลื่อนการรีเฟรชข้อมูลออกไปจนกว่าจะบันทึกเสร็จ',
+                showConfirmButton: false,
+                timer: 3500,
+                timerProgressBar: true,
+                customClass: { popup: 'rounded-2xl font-heading shadow-apple mt-4' }
+            });
+        }
+
+        // เตือนก่อนปิด/รีโหลดหน้า ถ้ายังบันทึกสถานะไม่เสร็จ
+        window.addEventListener('beforeunload', (e) => {
+            if (pendingStatusSaves.size > 0) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+
         async function refreshDbFromServer() {
+            // ถ้ายังมีการบันทึกสถานะค้างอยู่ ให้ข้ามการ refresh รอบนี้ก่อน กันค่าที่เพิ่งเปลี่ยนโดนทับ
+            if (pendingStatusSaves.size > 0) {
+                notifyStatusSavePending();
+                return db;
+            }
+
             const unreadBeforeRefresh = new Set(getUnreadResponses().map(r => getResponseNotificationId(r)));
             const serverData = await callServerAsync('getInitialData', []);
             db = serverData || { meetings: [], attendees: {}, responses: [], users: [] };
@@ -2989,14 +3020,12 @@
                     : (canManage ? `<button onclick="triggerReportUpload('${m.id}')" class="text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-upload mr-1"></i> อัปโหลด</button>` : '<span class="text-xs text-apple-muted">-</span>');
 
                 const statusControl = canManage
-                    ? `<div class="flex items-center gap-2">
-                            <select data-meeting-status="${m.id}" onchange="markMeetingStatusDirty('${m.id}')" class="apple-input py-1.5 px-3 text-xs min-w-[110px]">
+                    ? `<div class="flex flex-col gap-1">
+                            <select data-meeting-status="${m.id}" onchange="autoSaveMeetingStatus('${m.id}')" class="apple-input py-1.5 px-3 text-xs min-w-[110px]">
                                 <option value="active" ${isActive ? 'selected' : ''}>Active</option>
                                 <option value="inactive" ${!isActive ? 'selected' : ''}>Inactive</option>
                             </select>
-                            <button data-meeting-status-save="${m.id}" onclick="saveMeetingStatusFromList('${m.id}')" class="inline-flex items-center gap-1 text-xs font-semibold bg-ems-yellow text-ems-dark px-3 py-1.5 rounded-full border border-apple-border hover:scale-105 transition-transform">
-                                <i class="fa-solid fa-floppy-disk"></i> Save
-                            </button>
+                            <span data-meeting-status-state="${m.id}" class="text-[10px] text-apple-muted h-4 ml-1"></span>
                         </div>`
                     : (isActive
                         ? `<span class="inline-flex items-center gap-1 text-xs font-semibold bg-green-100 text-green-800 px-3 py-1.5 rounded-full border border-green-300"><span class="w-2 h-2 rounded-full bg-green-600"></span>Active</span>`
@@ -3025,41 +3054,52 @@
             });
         }
 
-        function markMeetingStatusDirty(mtgId) {
-            const btn = document.querySelector(`[data-meeting-status-save="${mtgId}"]`);
-            if (!btn) return;
-            btn.classList.add('ring-2', 'ring-ems-yellow');
+        function setMeetingStatusIndicator(mtgId, state) {
+            const el = document.querySelector(`[data-meeting-status-state="${mtgId}"]`);
+            if (!el) return;
+            if (state === 'saving') {
+                el.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>กำลังบันทึก...';
+            } else if (state === 'saved') {
+                el.innerHTML = '<i class="fa-solid fa-circle-check text-green-600 mr-1"></i>บันทึกแล้ว';
+                setTimeout(() => { if (el.isConnected && el.innerHTML.indexOf('บันทึกแล้ว') > -1) el.innerHTML = ''; }, 2500);
+            } else {
+                el.innerHTML = '';
+            }
         }
 
-        async function saveMeetingStatusFromList(mtgId) {
-            if (!guardManagePermission()) return;
-
+        async function autoSaveMeetingStatus(mtgId) {
             const select = document.querySelector(`[data-meeting-status="${mtgId}"]`);
             if (!select) return;
 
-            const nextState = select.value === 'active';
             const meetingIndex = db.meetings.findIndex(m => m.id === mtgId);
             if (meetingIndex < 0) return;
 
             const previousState = db.meetings[meetingIndex].isActive !== false;
-            db.meetings[meetingIndex].isActive = nextState;
-            renderAdminMeetingsList();
-            populateMeetingDropdowns();
+            const nextState = select.value === 'active';
 
-            setGlobalLoading(true, 'กำลังบันทึกสถานะ...');
+            if (!guardManagePermission()) {
+                select.value = previousState ? 'active' : 'inactive';
+                return;
+            }
+            if (previousState === nextState) return;
+
+            db.meetings[meetingIndex].isActive = nextState;
+            populateMeetingDropdowns();
+            setMeetingStatusIndicator(mtgId, 'saving');
+            pendingStatusSaves.add(mtgId);
+
             try {
                 const saved = await callServerAsync('setMeetingActiveStatus', [mtgId, nextState]);
                 if (!saved) throw new Error('Meeting not found on server');
-                await refreshDbFromServer();
-                showAlert('success', 'บันทึกสำเร็จ', `เปลี่ยนสถานะเป็น ${nextState ? 'Active' : 'Inactive'} แล้ว`);
+                setMeetingStatusIndicator(mtgId, 'saved');
             } catch (err) {
                 console.error('Failed to save meeting status:', err);
                 db.meetings[meetingIndex].isActive = previousState;
-                renderAdminMeetingsList();
                 populateMeetingDropdowns();
-                showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถอัปเดตสถานะ Active/Inactive ได้');
+                renderAdminMeetingsList();
+                showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถอัปเดตสถานะ Active/Inactive ได้ ระบบคืนค่าสถานะเดิมให้แล้ว');
             } finally {
-                setGlobalLoading(false);
+                pendingStatusSaves.delete(mtgId);
             }
         }
 
