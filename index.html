@@ -373,16 +373,16 @@
                         <p class="table-swipe-hint"><i class="fa-solid fa-arrows-left-right"></i> ปัดซ้าย-ขวาเพื่อดูข้อมูลทั้งหมด</p>
                         <div class="table-wrap">
                         <div class="overflow-x-auto table-scroll">
-                            <table class="w-full text-left border-collapse min-w-[700px]">
+                            <table class="w-full text-left border-collapse min-w-[1000px]">
                                 <thead>
                                     <tr class="text-apple-muted text-sm border-b border-apple-border">
-                                        <th class="pb-3 font-normal">หัวข้อ</th>
-                                        <th class="pb-3 font-normal">วัน-เวลา</th>
-                                        <th class="pb-3 font-normal">สถานที่</th>
-                                        <th class="pb-3 font-normal">สถานะ</th>
-                                        <th class="pb-3 font-normal">วาระ</th>
-                                        <th class="pb-3 font-normal">รายงานการประชุม</th>
-                                        <th class="pb-3 font-normal text-right">จัดการ</th>
+                                        <th class="pb-3 px-3 font-normal w-[28%] min-w-[240px]">หัวข้อ</th>
+                                        <th class="pb-3 px-3 font-normal w-[12%] min-w-[120px]">วัน-เวลา</th>
+                                        <th class="pb-3 px-3 font-normal w-[14%] min-w-[140px]">สถานที่</th>
+                                        <th class="pb-3 px-3 font-normal w-[16%] min-w-[180px]">สถานะ</th>
+                                        <th class="pb-3 px-3 font-normal w-[11%] min-w-[120px]">วาระ</th>
+                                        <th class="pb-3 px-3 font-normal w-[11%] min-w-[130px]">รายงานการประชุม</th>
+                                        <th class="pb-3 px-3 font-normal w-[8%] min-w-[96px] text-right">จัดการ</th>
                                     </tr>
                                 </thead>
                                 <tbody id="admin-meetings-list" class="divide-y divide-apple-border"></tbody>
@@ -2980,8 +2980,8 @@
                 const attendeeTotal = (db.attendees[m.id] || []).length;
                 const respondedCount = new Set((db.responses || []).filter(r => r.meetingId === m.id).map(r => String(r.name || '').trim())).size;
                 const respondedBadge = attendeeTotal > 0
-                    ? `<span class="inline-flex items-center gap-1 mt-1 text-[10px] ${respondedCount >= attendeeTotal ? 'bg-green-100 text-green-700' : 'bg-apple-gray text-apple-muted'} px-2 py-0.5 rounded-full" title="ผู้ตอบรับแล้ว ${respondedCount} จากรายชื่อทั้งหมด ${attendeeTotal} คน"><i class="fa-solid fa-user-check text-[9px]"></i> ${respondedCount}/${attendeeTotal} ตอบแล้ว</span>`
-                    : (respondedCount > 0 ? `<span class="inline-flex items-center gap-1 mt-1 text-[10px] bg-apple-gray text-apple-muted px-2 py-0.5 rounded-full"><i class="fa-solid fa-user-check text-[9px]"></i> ${respondedCount} ตอบแล้ว</span>` : '');
+                    ? `<span class="inline-flex items-center gap-1 text-[10px] ${respondedCount >= attendeeTotal ? 'bg-green-100 text-green-700' : 'bg-apple-gray text-apple-muted'} px-2 py-0.5 rounded-full" title="ผู้ตอบรับแล้ว ${respondedCount} จากรายชื่อทั้งหมด ${attendeeTotal} คน"><i class="fa-solid fa-user-check text-[9px]"></i> ${respondedCount}/${attendeeTotal} ตอบแล้ว</span>`
+                    : (respondedCount > 0 ? `<span class="inline-flex items-center gap-1 text-[10px] bg-apple-gray text-apple-muted px-2 py-0.5 rounded-full"><i class="fa-solid fa-user-check text-[9px]"></i> ${respondedCount} ตอบแล้ว</span>` : '');
                 const agendaCell = m.agendaUrl
                     ? `<div class="flex items-center gap-2"><a href="${escapeHtml(m.agendaUrl)}" target="_blank" rel="noopener" class="text-xs text-blue-600 underline truncate max-w-[120px]" title="${escapeHtml(m.agendaName || 'วาระการประชุม')}">${escapeHtml(m.agendaName || 'ดาวน์โหลด')}</a>${canManage ? `<button onclick="triggerAgendaUpload('${m.id}')" class="text-xs bg-apple-gray px-2 py-1 rounded-full border border-apple-border hover:bg-ems-yellow transition-colors"><i class="fa-solid fa-rotate"></i></button>` : ''}</div>`
                     : (canManage ? `<button onclick="triggerAgendaUpload('${m.id}')" class="text-xs font-medium bg-apple-gray text-apple-text hover:bg-ems-yellow hover:text-ems-dark px-3 py-1.5 rounded-full transition-colors border border-apple-border"><i class="fa-solid fa-upload mr-1"></i> อัปโหลด</button>` : '<span class="text-xs text-apple-muted">-</span>');
@@ -3010,13 +3010,13 @@
 
                 const row = `
                     <tr class="group hover:bg-apple-gray transition-colors ${isActive ? '' : 'opacity-70'}">
-                        <td class="py-4 px-2 align-top"><p class="font-medium text-apple-text">${escapeHtml(m.topic)}</p><div class="flex flex-wrap gap-1">${isSpeakerMeeting(m) ? '<span class="inline-block mt-1 text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full"><i class="fa-solid fa-person-chalkboard text-[9px] mr-0.5"></i>วิทยากร</span>' : ''}${m.hybridEnabled ? '<span class="inline-block mt-1 text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Hybrid</span>' : ''}${respondedBadge}</div></td>
-                        <td class="py-4 px-2 align-top text-sm"><p>${formatDateThai(m.date)}</p><p class="text-apple-muted">${escapeHtml(m.time)} น.</p></td>
-                        <td class="py-4 px-2 align-top text-sm text-apple-muted max-w-[150px] truncate" title="${escapeHtml(m.location)}">${escapeHtml(m.location)}</td>
-                        <td class="py-4 px-2 align-top text-sm">${statusControl}</td>
-                        <td class="py-4 px-2 align-top text-sm">${agendaCell}</td>
-                        <td class="py-4 px-2 align-top text-sm">${reportCell}</td>
-                        <td class="py-4 px-2 align-top text-right whitespace-nowrap">${actionButtons}</td>
+                        <td class="py-4 px-3 align-top"><p class="font-medium text-apple-text leading-snug">${escapeHtml(m.topic)}</p><div class="flex flex-wrap gap-1 mt-1.5">${isSpeakerMeeting(m) ? '<span class="inline-block text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full"><i class="fa-solid fa-person-chalkboard text-[9px] mr-0.5"></i>วิทยากร</span>' : ''}${m.hybridEnabled ? '<span class="inline-block text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Hybrid</span>' : ''}${respondedBadge}</div></td>
+                        <td class="py-4 px-3 align-top text-sm whitespace-nowrap"><p><i class="fa-regular fa-calendar text-[11px] text-apple-muted mr-1"></i>${formatDateThai(m.date)}</p><p class="text-apple-muted mt-0.5"><i class="fa-regular fa-clock text-[11px] mr-1"></i>${escapeHtml(m.time)} น.</p></td>
+                        <td class="py-4 px-3 align-top text-sm text-apple-muted"><span class="line-clamp-2 leading-snug" title="${escapeHtml(m.location)}">${escapeHtml(m.location)}</span></td>
+                        <td class="py-4 px-3 align-top text-sm">${statusControl}</td>
+                        <td class="py-4 px-3 align-top text-sm">${agendaCell}</td>
+                        <td class="py-4 px-3 align-top text-sm">${reportCell}</td>
+                        <td class="py-4 px-3 align-top text-right whitespace-nowrap">${actionButtons}</td>
                     </tr>`;
                 tbody.insertAdjacentHTML('beforeend', row);
             });
