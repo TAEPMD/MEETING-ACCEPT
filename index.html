@@ -379,8 +379,8 @@
                                         <th class="pb-3 px-3 font-normal w-[30%] min-w-[190px]">หัวข้อ</th>
                                         <th class="pb-3 px-3 font-normal w-[12%] min-w-[104px]">วัน-เวลา</th>
                                         <th class="pb-3 px-3 font-normal w-[14%] min-w-[110px]">สถานที่</th>
-                                        <th class="pb-3 px-3 font-normal w-[10%] min-w-[92px]">สถานะ</th>
-                                        <th class="pb-3 px-3 font-normal w-[25%] min-w-[180px]">วาระ / รายงานการประชุม</th>
+                                        <th class="pb-3 px-3 font-normal w-[13%] min-w-[136px]">สถานะ</th>
+                                        <th class="pb-3 px-3 font-normal w-[22%] min-w-[180px]">วาระ / รายงานการประชุม</th>
                                         <th class="pb-3 px-3 font-normal w-[9%] min-w-[84px] text-right">จัดการ</th>
                                     </tr>
                                 </thead>
@@ -3021,10 +3021,10 @@
 
                 const statusControl = canManage
                     ? `<div class="flex flex-col gap-1">
-                            <select data-meeting-status="${m.id}" onchange="autoSaveMeetingStatus('${m.id}')" class="apple-input py-1.5 px-2 text-xs w-full max-w-[100px]">
-                                <option value="active" ${isActive ? 'selected' : ''}>Active</option>
-                                <option value="inactive" ${!isActive ? 'selected' : ''}>Inactive</option>
-                            </select>
+                            <div class="inline-flex w-fit rounded-full bg-apple-gray border border-apple-border p-0.5">
+                                <button type="button" onclick="autoSaveMeetingStatus('${m.id}', true)" class="px-2.5 py-1 rounded-full text-[11px] transition-colors ${isActive ? 'bg-green-100 text-green-700 font-semibold shadow-sm' : 'text-apple-muted hover:text-apple-text'}">Active</button>
+                                <button type="button" onclick="autoSaveMeetingStatus('${m.id}', false)" class="px-2.5 py-1 rounded-full text-[11px] transition-colors ${!isActive ? 'bg-red-100 text-red-600 font-semibold shadow-sm' : 'text-apple-muted hover:text-apple-text'}">Inactive</button>
+                            </div>
                             <span data-meeting-status-state="${m.id}" class="text-[10px] text-apple-muted h-4 ml-1"></span>
                         </div>`
                     : (isActive
@@ -3067,24 +3067,18 @@
             }
         }
 
-        async function autoSaveMeetingStatus(mtgId) {
-            const select = document.querySelector(`[data-meeting-status="${mtgId}"]`);
-            if (!select) return;
-
+        async function autoSaveMeetingStatus(mtgId, nextState) {
             const meetingIndex = db.meetings.findIndex(m => m.id === mtgId);
             if (meetingIndex < 0) return;
 
             const previousState = db.meetings[meetingIndex].isActive !== false;
-            const nextState = select.value === 'active';
 
-            if (!guardManagePermission()) {
-                select.value = previousState ? 'active' : 'inactive';
-                return;
-            }
+            if (!guardManagePermission()) return;
             if (previousState === nextState) return;
 
             db.meetings[meetingIndex].isActive = nextState;
             populateMeetingDropdowns();
+            renderAdminMeetingsList();
             setMeetingStatusIndicator(mtgId, 'saving');
             pendingStatusSaves.add(mtgId);
 
