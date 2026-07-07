@@ -373,15 +373,15 @@
                         <p class="table-swipe-hint"><i class="fa-solid fa-arrows-left-right"></i> ปัดซ้าย-ขวาเพื่อดูข้อมูลทั้งหมด</p>
                         <div class="table-wrap">
                         <div class="overflow-x-auto table-scroll">
-                            <table class="w-full text-left border-collapse min-w-[1000px]">
+                            <table class="w-full text-left border-collapse min-w-[760px]">
                                 <thead>
                                     <tr class="text-apple-muted text-sm border-b border-apple-border">
-                                        <th class="pb-3 px-3 font-normal w-[30%] min-w-[240px]">หัวข้อ</th>
-                                        <th class="pb-3 px-3 font-normal w-[12%] min-w-[120px]">วัน-เวลา</th>
-                                        <th class="pb-3 px-3 font-normal w-[15%] min-w-[140px]">สถานที่</th>
-                                        <th class="pb-3 px-3 font-normal w-[17%] min-w-[180px]">สถานะ</th>
-                                        <th class="pb-3 px-3 font-normal w-[18%] min-w-[190px]">วาระ / รายงานการประชุม</th>
-                                        <th class="pb-3 px-3 font-normal w-[8%] min-w-[96px] text-right">จัดการ</th>
+                                        <th class="pb-3 px-3 font-normal w-[30%] min-w-[190px]">หัวข้อ</th>
+                                        <th class="pb-3 px-3 font-normal w-[12%] min-w-[104px]">วัน-เวลา</th>
+                                        <th class="pb-3 px-3 font-normal w-[14%] min-w-[110px]">สถานที่</th>
+                                        <th class="pb-3 px-3 font-normal w-[10%] min-w-[92px]">สถานะ</th>
+                                        <th class="pb-3 px-3 font-normal w-[25%] min-w-[180px]">วาระ / รายงานการประชุม</th>
+                                        <th class="pb-3 px-3 font-normal w-[9%] min-w-[84px] text-right">จัดการ</th>
                                     </tr>
                                 </thead>
                                 <tbody id="admin-meetings-list" class="divide-y divide-apple-border"></tbody>
@@ -3021,7 +3021,7 @@
 
                 const statusControl = canManage
                     ? `<div class="flex flex-col gap-1">
-                            <select data-meeting-status="${m.id}" onchange="autoSaveMeetingStatus('${m.id}')" class="apple-input py-1.5 px-3 text-xs min-w-[110px]">
+                            <select data-meeting-status="${m.id}" onchange="autoSaveMeetingStatus('${m.id}')" class="apple-input py-1.5 px-2 text-xs w-full max-w-[100px]">
                                 <option value="active" ${isActive ? 'selected' : ''}>Active</option>
                                 <option value="inactive" ${!isActive ? 'selected' : ''}>Inactive</option>
                             </select>
