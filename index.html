@@ -376,12 +376,11 @@
                             <table class="w-full text-left border-collapse min-w-[1000px]">
                                 <thead>
                                     <tr class="text-apple-muted text-sm border-b border-apple-border">
-                                        <th class="pb-3 px-3 font-normal w-[28%] min-w-[240px]">หัวข้อ</th>
+                                        <th class="pb-3 px-3 font-normal w-[30%] min-w-[240px]">หัวข้อ</th>
                                         <th class="pb-3 px-3 font-normal w-[12%] min-w-[120px]">วัน-เวลา</th>
-                                        <th class="pb-3 px-3 font-normal w-[14%] min-w-[140px]">สถานที่</th>
-                                        <th class="pb-3 px-3 font-normal w-[16%] min-w-[180px]">สถานะ</th>
-                                        <th class="pb-3 px-3 font-normal w-[11%] min-w-[120px]">วาระ</th>
-                                        <th class="pb-3 px-3 font-normal w-[11%] min-w-[130px]">รายงานการประชุม</th>
+                                        <th class="pb-3 px-3 font-normal w-[15%] min-w-[140px]">สถานที่</th>
+                                        <th class="pb-3 px-3 font-normal w-[17%] min-w-[180px]">สถานะ</th>
+                                        <th class="pb-3 px-3 font-normal w-[18%] min-w-[190px]">วาระ / รายงานการประชุม</th>
                                         <th class="pb-3 px-3 font-normal w-[8%] min-w-[96px] text-right">จัดการ</th>
                                     </tr>
                                 </thead>
@@ -2960,7 +2959,7 @@
             tbody.innerHTML = '';
 
             if (db.meetings.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-12 text-apple-muted"><i class="fa-regular fa-calendar-plus text-3xl mb-3 block opacity-40"></i>ยังไม่มีข้อมูลการประชุม — เริ่มต้นด้วยการกรอกฟอร์มด้านบน</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-12 text-apple-muted"><i class="fa-regular fa-calendar-plus text-3xl mb-3 block opacity-40"></i>ยังไม่มีข้อมูลการประชุม — เริ่มต้นด้วยการกรอกฟอร์มด้านบน</td></tr>`;
                 return;
             }
 
@@ -2971,7 +2970,7 @@
             if (statusFilter === 'inactive') sortedMtg = sortedMtg.filter(m => m.isActive === false);
 
             if (sortedMtg.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-12 text-apple-muted"><i class="fa-solid fa-filter-circle-xmark text-3xl mb-3 block opacity-40"></i>ไม่พบรายการประชุมตามตัวกรองที่เลือก</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-12 text-apple-muted"><i class="fa-solid fa-filter-circle-xmark text-3xl mb-3 block opacity-40"></i>ไม่พบรายการประชุมตามตัวกรองที่เลือก</td></tr>`;
                 return;
             }
 
@@ -3014,8 +3013,12 @@
                         <td class="py-4 px-3 align-top text-sm whitespace-nowrap"><p><i class="fa-regular fa-calendar text-[11px] text-apple-muted mr-1"></i>${formatDateThai(m.date)}</p><p class="text-apple-muted mt-0.5"><i class="fa-regular fa-clock text-[11px] mr-1"></i>${escapeHtml(m.time)} น.</p></td>
                         <td class="py-4 px-3 align-top text-sm text-apple-muted"><span class="line-clamp-2 leading-snug" title="${escapeHtml(m.location)}">${escapeHtml(m.location)}</span></td>
                         <td class="py-4 px-3 align-top text-sm">${statusControl}</td>
-                        <td class="py-4 px-3 align-top text-sm">${agendaCell}</td>
-                        <td class="py-4 px-3 align-top text-sm">${reportCell}</td>
+                        <td class="py-4 px-3 align-top text-sm">
+                            <div class="space-y-2">
+                                <div class="flex items-center gap-2"><span class="text-[10px] text-apple-muted w-12 shrink-0">วาระ</span>${agendaCell}</div>
+                                <div class="flex items-center gap-2"><span class="text-[10px] text-apple-muted w-12 shrink-0">รายงาน</span>${reportCell}</div>
+                            </div>
+                        </td>
                         <td class="py-4 px-3 align-top text-right whitespace-nowrap">${actionButtons}</td>
                     </tr>`;
                 tbody.insertAdjacentHTML('beforeend', row);
