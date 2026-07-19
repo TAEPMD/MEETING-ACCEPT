@@ -60,14 +60,25 @@
             footer { padding-bottom: calc(1.5rem + env(safe-area-inset-bottom)); }
         }
 
-        /* Responsive table scroll: momentum scrolling + edge fade hint */
+        /* Responsive table scroll: momentum scrolling (tablet) */
         .table-scroll { -webkit-overflow-scrolling: touch; scrollbar-width: thin; position: relative; }
         .table-wrap { position: relative; }
+
+        /* Mobile: transform admin tables into stacked cards — no horizontal scroll, no overlap */
         @media (max-width: 767px) {
-            .table-wrap::after { content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 28px; pointer-events: none; background: linear-gradient(to left, rgba(255,255,255,0.95), rgba(255,255,255,0)); border-radius: 0 12px 12px 0; }
-            .table-swipe-hint { display: flex; }
+            .md-cards .table-scroll { overflow-x: visible; }
+            .md-cards table, .md-cards tbody, .md-cards tr, .md-cards td { display: block; width: 100%; }
+            .md-cards table { min-width: 0 !important; }
+            .md-cards thead { display: none; }
+            .md-cards tr { border: 1px solid #E5E5EA !important; border-radius: 16px; padding: 14px 16px; margin-bottom: 12px; background: #FFFFFF; box-shadow: 0 2px 8px rgba(0,0,0,0.03); }
+            .md-cards tr:last-child { margin-bottom: 0; }
+            .md-cards td { padding: 9px 0 !important; text-align: left !important; white-space: normal !important; max-width: none !important; border: none; }
+            .md-cards td + td { border-top: 1px dashed #E5E5EA; }
+            .md-cards td:first-child { padding-top: 0 !important; }
+            .md-cards td:last-child { padding-bottom: 0 !important; }
+            .md-cards td[data-label]::before { content: attr(data-label); display: block; font-size: 10px; font-weight: 600; letter-spacing: 0.03em; color: #86868B; margin-bottom: 4px; }
+            .md-cards td[colspan] { text-align: center !important; }
         }
-        .table-swipe-hint { display: none; align-items: center; gap: 6px; font-size: 11px; color: #86868B; margin-bottom: 8px; }
 
         .no-scrollbar { scrollbar-width: none; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -162,6 +173,8 @@
         }
 
         .swal2-popup { border-radius: 24px !important; font-family: 'Prompt', sans-serif !important; }
+        .swal2-popup:not(.swal2-toast) { width: min(92vw, 32em) !important; }
+        .swal2-html-container { overflow-x: hidden !important; }
         .swal2-confirm { border-radius: 999px !important; }
         .swal2-cancel { border-radius: 999px !important; }
     </style>
@@ -370,8 +383,7 @@
 
                     <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple">
                         <h3 class="font-heading font-semibold text-lg mb-4">รายการทั้งหมด</h3>
-                        <p class="table-swipe-hint"><i class="fa-solid fa-arrows-left-right"></i> ปัดซ้าย-ขวาเพื่อดูข้อมูลทั้งหมด</p>
-                        <div class="table-wrap">
+                        <div class="table-wrap md-cards">
                         <div class="overflow-x-auto table-scroll">
                             <table class="w-full text-left border-collapse min-w-[760px]">
                                 <thead>
@@ -447,14 +459,14 @@
 
                 <!-- Admin Tab: History -->
                 <div id="admin-tab-history" class="admin-tab-content hidden space-y-6">
-                    <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple flex flex-col md:flex-row md:items-center gap-4 justify-between">
-                        <div class="flex-grow w-full">
+                    <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 items-end">
+                        <div class="min-w-0 sm:col-span-2 xl:col-span-1">
                             <label class="block text-sm text-apple-muted mb-2 ml-1">กรองตามการประชุม</label>
                             <select id="admin-history-filter" onchange="renderHistory()" class="apple-input font-heading text-base md:text-lg">
                                 <option value="all">-- แสดงประวัติการตอบรับทั้งหมด --</option>
                             </select>
                         </div>
-                        <div class="w-full md:w-56">
+                        <div class="min-w-0">
                             <label class="block text-sm text-apple-muted mb-2 ml-1">กรองตามสถานะ</label>
                             <select id="admin-history-status-filter" onchange="renderHistory()" class="apple-input">
                                 <option value="all">ทั้งหมด</option>
@@ -464,7 +476,7 @@
                                 <option value="onsite">Onsite</option>
                             </select>
                         </div>
-                        <div class="w-full md:w-56">
+                        <div class="min-w-0">
                             <label class="block text-sm text-apple-muted mb-2 ml-1">เรียงลำดับ</label>
                             <select id="admin-history-sort" onchange="renderHistory()" class="apple-input">
                                 <option value="latest">ล่าสุดก่อน</option>
@@ -473,7 +485,7 @@
                                 <option value="name_desc">ชื่อ Z-A</option>
                             </select>
                         </div>
-                        <div class="w-full md:w-64">
+                        <div class="min-w-0 sm:col-span-2 xl:col-span-1">
                             <label class="block text-sm text-apple-muted mb-2 ml-1">ค้นหา</label>
                             <div class="relative">
                                 <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-apple-muted text-sm pointer-events-none"></i>
@@ -494,8 +506,7 @@
                                 <span class="bg-apple-gray text-apple-text text-xs font-bold px-3 py-1 rounded-full"><span id="history-count">0</span> รายการ</span>
                             </div>
                         </div>
-                        <p class="table-swipe-hint"><i class="fa-solid fa-arrows-left-right"></i> ปัดซ้าย-ขวาเพื่อดูข้อมูลทั้งหมด</p>
-                        <div class="table-wrap">
+                        <div class="table-wrap md-cards">
                         <div class="overflow-x-auto table-scroll">
                             <table class="w-full text-left border-collapse min-w-[800px]">
                                 <thead>
@@ -554,8 +565,7 @@
                             <h3 class="font-heading font-semibold text-lg">รายการผู้ใช้งาน Admin Area</h3>
                             <span class="bg-apple-gray text-apple-text text-xs font-bold px-3 py-1 rounded-full"><span id="user-count">0</span> บัญชี</span>
                         </div>
-                        <p class="table-swipe-hint"><i class="fa-solid fa-arrows-left-right"></i> ปัดซ้าย-ขวาเพื่อดูข้อมูลทั้งหมด</p>
-                        <div class="table-wrap">
+                        <div class="table-wrap md-cards">
                         <div class="overflow-x-auto table-scroll">
                             <table class="w-full text-left border-collapse min-w-[700px]">
                                 <thead>
@@ -1677,14 +1687,14 @@
 
                 list.innerHTML += `
                     <li class="py-3 px-2 flex flex-col sm:flex-row justify-between items-start sm:items-center hover:bg-apple-gray/50 transition-colors gap-3">
-                        <div class="flex items-center gap-3">
-                            <span class="text-apple-muted w-5 text-right text-sm">${idx + 1}.</span>
+                        <div class="flex items-center gap-3 min-w-0 w-full sm:w-auto">
+                            <span class="text-apple-muted w-5 text-right text-sm shrink-0">${idx + 1}.</span>
                             <div class="min-w-0">
                                 <span class="font-medium block">${escapeHtml(user.name)}</span>
                                 ${user.email ? `<span class="text-xs text-apple-muted block truncate"><i class="fa-regular fa-envelope mr-1"></i>${escapeHtml(user.email)}</span>` : ''}
                             </div>
                         </div>
-                        <div class="flex items-center gap-3 ml-8 sm:ml-0">
+                        <div class="flex items-center flex-wrap gap-x-3 gap-y-2 ml-8 sm:ml-0 w-full sm:w-auto">
                             ${fileUI}
                             <button onclick="showQRCode('${mtgId}', '${userNameSafe}')" aria-label="QR Code ส่วนบุคคล" class="text-apple-muted hover:text-ems-dark hover:bg-ems-yellow/20 p-1.5 rounded-full transition-colors" title="QR Code ส่วนบุคคล"><i class="fa-solid fa-qrcode text-sm"></i></button>
                             <button onclick="copyAttendeeLink('${mtgId}', '${userNameSafe}')" aria-label="คัดลอกลิงก์ตอบรับส่วนบุคคล" class="text-apple-muted hover:text-blue-600 hover:bg-blue-50 p-1.5 rounded-full transition-colors" title="คัดลอกลิงก์ตอบรับส่วนบุคคล"><i class="fa-solid fa-link text-sm"></i></button>
@@ -2192,10 +2202,10 @@
                 const row = `
                     <tr class="hover:bg-apple-gray transition-colors">
                         <td class="py-3 px-2 font-medium">${escapeHtml(r.name)}</td>
-                        <td class="py-3 px-2 text-apple-muted truncate max-w-[200px]" title="${escapeHtml(r.topic)}">${escapeHtml(r.topic)}</td>
-                        <td class="py-3 px-2">${statusBadge}</td>
-                        <td class="py-3 px-2 text-apple-muted text-xs">${escapeHtml(r.timestamp)}</td>
-                        <td class="py-3 px-2 text-right">
+                        <td data-label="หัวข้อประชุม" class="py-3 px-2 text-apple-muted truncate max-w-[200px]" title="${escapeHtml(r.topic)}">${escapeHtml(r.topic)}</td>
+                        <td data-label="สถานะ" class="py-3 px-2">${statusBadge}</td>
+                        <td data-label="เวลาบันทึก" class="py-3 px-2 text-apple-muted text-xs">${escapeHtml(r.timestamp)}</td>
+                        <td data-label="เอกสาร" class="py-3 px-2 text-right">
                             ${actionButtons}
                         </td>
                     </tr>`;
@@ -3039,16 +3049,16 @@
                 const row = `
                     <tr class="group hover:bg-apple-gray transition-colors ${isActive ? '' : 'opacity-70'}">
                         <td class="py-4 px-3 align-top"><p class="font-medium text-apple-text leading-snug">${escapeHtml(m.topic)}</p><div class="flex flex-wrap gap-1 mt-1.5">${isSpeakerMeeting(m) ? '<span class="inline-block text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full"><i class="fa-solid fa-person-chalkboard text-[9px] mr-0.5"></i>วิทยากร</span>' : ''}${m.hybridEnabled ? '<span class="inline-block text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Hybrid</span>' : ''}${respondedBadge}</div></td>
-                        <td class="py-4 px-3 align-top text-sm whitespace-nowrap"><p><i class="fa-regular fa-calendar text-[11px] text-apple-muted mr-1"></i>${formatDateThai(m.date)}</p><p class="text-apple-muted mt-0.5"><i class="fa-regular fa-clock text-[11px] mr-1"></i>${escapeHtml(m.time)} น.</p></td>
-                        <td class="py-4 px-3 align-top text-sm text-apple-muted"><span class="line-clamp-2 leading-snug" title="${escapeHtml(m.location)}">${escapeHtml(m.location)}</span></td>
-                        <td class="py-4 px-3 align-top text-sm">${statusControl}</td>
-                        <td class="py-4 px-3 align-top text-sm">
+                        <td data-label="วัน-เวลา" class="py-4 px-3 align-top text-sm whitespace-nowrap"><p><i class="fa-regular fa-calendar text-[11px] text-apple-muted mr-1"></i>${formatDateThai(m.date)}</p><p class="text-apple-muted mt-0.5"><i class="fa-regular fa-clock text-[11px] mr-1"></i>${escapeHtml(m.time)} น.</p></td>
+                        <td data-label="สถานที่" class="py-4 px-3 align-top text-sm text-apple-muted"><span class="line-clamp-2 leading-snug" title="${escapeHtml(m.location)}">${escapeHtml(m.location)}</span></td>
+                        <td data-label="สถานะ" class="py-4 px-3 align-top text-sm">${statusControl}</td>
+                        <td data-label="วาระ / รายงานการประชุม" class="py-4 px-3 align-top text-sm">
                             <div class="space-y-2">
                                 <div class="flex items-center gap-2"><span class="text-[10px] text-apple-muted w-12 shrink-0">วาระ</span>${agendaCell}</div>
                                 <div class="flex items-center gap-2"><span class="text-[10px] text-apple-muted w-12 shrink-0">รายงาน</span>${reportCell}</div>
                             </div>
                         </td>
-                        <td class="py-4 px-3 align-top text-right whitespace-nowrap">${actionButtons}</td>
+                        <td data-label="จัดการ" class="py-4 px-3 align-top text-right whitespace-nowrap">${actionButtons}</td>
                     </tr>`;
                 tbody.insertAdjacentHTML('beforeend', row);
             });
@@ -3123,9 +3133,9 @@
                 const row = `
                     <tr class="hover:bg-apple-gray transition-colors">
                         <td class="py-3 px-2 font-medium">${escapeHtml(u.name || '-')}</td>
-                        <td class="py-3 px-2"><span class="text-xs bg-apple-gray px-2 py-1 rounded-full">${escapeHtml(normalizeRoleLabel(u.role))}</span></td>
-                        <td class="py-3 px-2">${pinCell}</td>
-                        <td class="py-3 px-2 text-right">
+                        <td data-label="Role" class="py-3 px-2"><span class="text-xs bg-apple-gray px-2 py-1 rounded-full">${escapeHtml(normalizeRoleLabel(u.role))}</span></td>
+                        <td data-label="PIN" class="py-3 px-2">${pinCell}</td>
+                        <td data-label="จัดการ" class="py-3 px-2 text-right">
                             ${canManageUsers
                                 ? `<button onclick="editUser('${u.id}')" class="text-xs bg-white border border-apple-border hover:bg-yellow-50 text-apple-text px-3 py-1.5 rounded-full transition-colors shadow-sm"><i class="fa-solid fa-pen mr-1"></i> แก้ไข</button>
                                    <button onclick="deleteUser('${u.id}')" class="text-xs bg-white border border-apple-border hover:bg-red-50 text-ems-red px-3 py-1.5 rounded-full transition-colors shadow-sm ml-2"><i class="fa-solid fa-trash-can mr-1"></i> ลบ</button>`
