@@ -16,9 +16,8 @@ export default async function handler(req, res) {
     const body = req.body || {};
     const action = String(body.action || '').trim();
     const payload = Array.isArray(body.payload) ? body.payload : [];
-    const runtimeGasUrl = normalizeGasUrl(body.gasApiUrl);
     const envGasUrl = normalizeGasUrl(process.env.GAS_API_URL);
-    const gasUrl = isValidGasExecUrl(runtimeGasUrl) ? runtimeGasUrl : envGasUrl;
+    const gasUrl = envGasUrl;
 
     if (!action) {
       res.status(400).json({ success: false, error: 'Missing action' });

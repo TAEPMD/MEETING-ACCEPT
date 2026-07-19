@@ -851,81 +851,12 @@
         const NOTIFICATION_SEEN_KEY = 'niemRsvpSeenResponseIds';
         let adminNotificationPollTimer = null;
 
-        // ตั้งค่า URL ของ Apps Script Web App สำหรับโหมดที่ deploy หน้าเว็บบน Vercel
-        // ตัวอย่าง: https://script.google.com/macros/s/AKfycb.../exec
-        const gasUrlFromQuery = new URLSearchParams(window.location.search).get('gasApiUrl');
-        if (gasUrlFromQuery) localStorage.setItem('gasApiUrl', gasUrlFromQuery);
-
         const APP_CONFIG = {
-            apiProxyUrl: '/api/gas',
-            gasApiUrl: window.GAS_API_URL || localStorage.getItem('gasApiUrl') || 'PASTE_YOUR_GAS_WEB_APP_URL_HERE'
+            apiProxyUrl: '/api/gas'
         };
-        let gasUrlPromptInFlight = null;
 
         function isGasRuntime() {
             return typeof google !== 'undefined' && google.script && google.script.run;
-        }
-
-        function isExternalApiReady() {
-            return APP_CONFIG.gasApiUrl && APP_CONFIG.gasApiUrl.indexOf('PASTE_YOUR_GAS_WEB_APP_URL_HERE') === -1;
-        }
-
-        function normalizeGasApiUrl(url) {
-            return String(url || '').trim().replace(/\/$/, '');
-        }
-
-        function setGasApiUrl(url) {
-            const normalizedUrl = normalizeGasApiUrl(url);
-            if (normalizedUrl) {
-                APP_CONFIG.gasApiUrl = normalizedUrl;
-                localStorage.setItem('gasApiUrl', normalizedUrl);
-            } else {
-                APP_CONFIG.gasApiUrl = 'PASTE_YOUR_GAS_WEB_APP_URL_HERE';
-                localStorage.removeItem('gasApiUrl');
-            }
-            return APP_CONFIG.gasApiUrl;
-        }
-
-        function promptForGasApiUrl(reasonMessage) {
-            if (gasUrlPromptInFlight) return gasUrlPromptInFlight;
-            if (typeof Swal === 'undefined') return Promise.reject(new Error('missing_gas_url'));
-
-            gasUrlPromptInFlight = Swal.fire({
-                icon: 'info',
-                title: 'ตั้งค่า GAS API URL',
-                text: 'ระบุ URL ของ Apps Script Web App เพื่อเชื่อมต่อ Google Sheets และ Google Drive',
-                input: 'url',
-                inputValue: isExternalApiReady() ? APP_CONFIG.gasApiUrl : '',
-                inputPlaceholder: 'https://script.google.com/macros/s/.../exec',
-                showCancelButton: true,
-                confirmButtonColor: '#1D1D1F',
-                cancelButtonColor: '#86868B',
-                confirmButtonText: 'บันทึกและลองใหม่',
-                cancelButtonText: 'ยกเลิก',
-                footer: `<span class="text-xs text-apple-muted">${reasonMessage || 'หากใช้ Vercel สามารถใส่ URL นี้ครั้งเดียว แล้วระบบจะจำค่าไว้ในเครื่องนี้'}</span>`,
-                inputValidator: (value) => {
-                    const normalizedUrl = normalizeGasApiUrl(value);
-                    if (!normalizedUrl) return 'กรุณาระบุ Apps Script Web App URL';
-                    if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec(?:\?.*)?$/.test(normalizedUrl)) {
-                        return 'URL ต้องเป็น Apps Script Web App ที่ลงท้ายด้วย /exec';
-                    }
-                    return undefined;
-                },
-                customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6 text-white', cancelButton: 'rounded-full px-6' }
-            }).then((result) => {
-                gasUrlPromptInFlight = null;
-                if (!result.isConfirmed || !result.value) {
-                    throw new Error('missing_gas_url');
-                }
-                const normalizedUrl = normalizeGasApiUrl(result.value);
-                setGasApiUrl(normalizedUrl);
-                return normalizedUrl;
-            }).catch((err) => {
-                gasUrlPromptInFlight = null;
-                throw err;
-            });
-
-            return gasUrlPromptInFlight;
         }
 
         function callServer(action, args, onSuccess, onFailure) {
@@ -946,8 +877,7 @@
             function requestViaProxy() {
                 const proxyBody = {
                     action: action,
-                    payload: safeArgs,
-                    gasApiUrl: isExternalApiReady() ? APP_CONFIG.gasApiUrl : ''
+                    payload: safeArgs
                 };
 
                 return fetch(APP_CONFIG.apiProxyUrl, {
@@ -968,95 +898,27 @@
                 });
             }
 
-            function requestDirectGas() {
-                if (!isExternalApiReady()) {
-                    return Promise.reject(new Error('missing_gas_url'));
+            function getProxyErrorMessage(err) {
+                const message = String(err && err.message || err || '');
+
+                if (message.indexOf('Missing GAS_API_URL env on Vercel') > -1) {
+                    return 'ระบบเชื่อมต่อฐานข้อมูลยังไม่ได้รับการตั้งค่า กรุณาแจ้งผู้ดูแลระบบให้กำหนด GAS_API_URL บน Vercel แล้ว deploy ใหม่';
                 }
-
-                const directBody = new URLSearchParams();
-                directBody.set('action', action);
-                directBody.set('payload', JSON.stringify(safeArgs));
-
-                return fetch(APP_CONFIG.gasApiUrl, { method: 'POST', body: directBody })
-                    .then(async (resp) => {
-                        let json = null;
-                        try { json = await resp.json(); } catch (e) {}
-
-                        if (!resp.ok) {
-                            throw new Error('gas_http_' + resp.status + ':' + ((json && json.error) || resp.statusText || 'GAS error'));
-                        }
-                        if (!json || !json.success) {
-                            throw new Error('gas_logic:' + ((json && json.error) || 'Server response error'));
-                        }
-                        return json.data;
-                    });
+                if (message.indexOf('proxy_http_404') === 0) {
+                    return 'ไม่พบ API สำหรับเชื่อมต่อฐานข้อมูล กรุณาแจ้งผู้ดูแลระบบให้ตรวจสอบการ deploy ไฟล์ api/gas.js';
+                }
+                if (message.indexOf('Invalid JSON from GAS') > -1) {
+                    return 'Apps Script ตอบกลับไม่ถูกต้อง กรุณาแจ้งผู้ดูแลระบบให้ตรวจสอบ Web App URL และสิทธิ์การเข้าถึง';
+                }
+                return 'เชื่อมต่อฐานข้อมูลไม่สำเร็จ กรุณาลองใหม่หรือติดต่อผู้ดูแลระบบ (' + message + ')';
             }
 
-            function shouldPromptForDirectGas(proxyMessage, gasMessage) {
-                return gasMessage === 'missing_gas_url'
-                    || proxyMessage.indexOf('proxy_http_404') === 0
-                    || proxyMessage.indexOf('Missing GAS_API_URL env on Vercel') > -1
-                    || proxyMessage.indexOf('proxy_logic:Missing GAS_API_URL env on Vercel') === 0
-                    || proxyMessage.indexOf('proxy_logic:Invalid JSON from GAS') === 0;
-            }
-
-            function getDirectGasPromptReason(proxyMessage) {
-                if (proxyMessage.indexOf('proxy_http_404') === 0) {
-                    return 'ไม่พบ Vercel Function /api/gas บนเว็บนี้ ระบบจะเชื่อมต่อ Apps Script โดยตรงแทน';
-                }
-                if (proxyMessage.indexOf('Missing GAS_API_URL env on Vercel') > -1) {
-                    return 'Vercel ยังไม่ได้ตั้งค่า GAS_API_URL ระบบจะใช้ Apps Script URL โดยตรงแทน';
-                }
-                if (proxyMessage.indexOf('proxy_logic:Invalid JSON from GAS') === 0) {
-                    return 'URL ของ GAS ที่ใช้อยู่ไม่ถูกต้องหรือไม่ได้เป็น Web App /exec กรุณาระบุ URL ที่ถูกต้อง';
-                }
-                return 'กรุณาระบุ Apps Script Web App URL เพื่อเชื่อมต่อฐานข้อมูล';
-            }
-
-            function requestDirectGasWithRecovery(proxyErr) {
-                const proxyMessage = String(proxyErr && proxyErr.message || proxyErr || '');
-
-                return requestDirectGas().catch(function(gasErr) {
-                    const gasMessage = String(gasErr && gasErr.message || gasErr || '');
-                    if (!shouldPromptForDirectGas(proxyMessage, gasMessage)) {
-                        throw gasErr;
-                    }
-
-                    return promptForGasApiUrl(getDirectGasPromptReason(proxyMessage))
-                        .then(function() {
-                            // หลังผู้ใช้ระบุ URL ใหม่ ให้ลองผ่าน proxy อีกครั้งก่อนเพื่อเลี่ยง CORS
-                            return requestViaProxy().catch(function() {
-                                return requestDirectGas();
-                            });
-                        });
-                });
-            }
-
-            // ลองผ่าน proxy ก่อนเสมอ (ดีที่สุดบน Vercel), ถ้าไม่สำเร็จค่อย fallback
+            // หน้าเว็บบน Vercel เรียก Apps Script ผ่าน server-side proxy เท่านั้น
+            // เพื่อไม่เปิดเผยการตั้งค่า backend และไม่ให้ผู้ใช้ปลายทางต้องกรอก URL เอง
             requestViaProxy()
                 .then(ok)
-                .catch(function(proxyErr) {
-                    requestDirectGasWithRecovery(proxyErr)
-                        .then(ok)
-                        .catch(function(gasErr) {
-                            const pMsg = String(proxyErr && proxyErr.message || proxyErr || '');
-                            const gMsg = String(gasErr && gasErr.message || gasErr || '');
-
-                            if (pMsg.indexOf('proxy_http_404') === 0) {
-                                fail('ไม่พบ Vercel Function /api/gas (404) กรุณา redeploy โปรเจกต์และตรวจสอบว่าไฟล์ api/gas.js อยู่ใน repo');
-                                return;
-                            }
-                            if (gMsg.indexOf('gas_http_403') === 0) {
-                                fail('GAS API ตอบกลับ 403: ให้ตั้ง Deploy เป็น Execute as: Me และ Who has access: Anyone แล้ว Deploy ใหม่');
-                                return;
-                            }
-                            if (gMsg === 'missing_gas_url') {
-                                fail('ไม่สามารถเชื่อมต่อ API ได้: กรุณากำหนด Apps Script Web App URL (ลงท้ายด้วย /exec) หรือเปิดใช้ /api/gas บน Vercel');
-                                return;
-                            }
-
-                            fail('เชื่อมต่อฐานข้อมูลไม่สำเร็จ | Proxy: ' + pMsg + ' | GAS: ' + gMsg);
-                        });
+                .catch(function(err) {
+                    fail(getProxyErrorMessage(err));
                 });
         }
 
