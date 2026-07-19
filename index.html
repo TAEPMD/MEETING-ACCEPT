@@ -101,9 +101,12 @@
         input[type="date"].apple-input, input[type="time"].apple-input { -webkit-appearance: none; appearance: none; }
         
         select.apple-input { appearance: none; background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2386868B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e"); background-repeat: no-repeat; background-position: right 12px center; background-size: 16px; padding-right: 40px; }
-        .segmented-control { display: flex; background-color: #E5E5EA; border-radius: 9px; padding: 2px; -webkit-overflow-scrolling: touch; }
-        .segmented-control button { flex: 1 0 auto; padding: 6px 12px; border-radius: 7px; font-size: 14px; font-weight: 500; color: #1D1D1F; transition: all 0.2s ease; white-space: nowrap; }
-        .segmented-control button.active { background-color: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); }
+        .segmented-control { display: flex; background-color: #F2F2F7; border: 1px solid #E5E5EA; border-radius: 12px; padding: 3px; -webkit-overflow-scrolling: touch; }
+        .segmented-control button { flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 9px 14px; border-radius: 9px; font-size: 14px; font-weight: 500; color: #6E6E73; transition: all 0.2s ease; white-space: nowrap; }
+        .segmented-control button i { font-size: 12px; opacity: 0.6; transition: opacity 0.2s ease; }
+        .segmented-control button:hover { color: #1D1D1F; }
+        .segmented-control button.active { background-color: #FFFFFF; color: #1D1D1F; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.14); }
+        .segmented-control button.active i { opacity: 1; }
         .notification-badge { min-width: 1.35rem; height: 1.35rem; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #FF3B30; color: #FFFFFF; font-size: 11px; font-weight: 700; line-height: 1; box-shadow: 0 0 0 2px #FFFFFF; }
         .notification-badge.hidden { display: none; }
         .admin-dashboard-header { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, auto); gap: 16px 24px; align-items: center; }
@@ -112,8 +115,8 @@
         .admin-heading-title { font-size: clamp(1.5rem, 1.2rem + 0.9vw, 2rem); line-height: 1.2; white-space: nowrap; }
         .admin-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; min-width: 0; }
         .admin-control-pill { min-height: 44px; }
-        .admin-tabs-row { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
-        .admin-tabs-row .segmented-control { width: min(100%, 620px); }
+        .admin-tabs-row { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; border-top: 1px solid #E5E5EA; padding-top: 16px; }
+        .admin-tabs-row .segmented-control { width: 100%; }
         .admin-logout-btn { width: 44px; height: 44px; }
 
         @media (max-width: 1024px) {
@@ -129,6 +132,9 @@
             .admin-toolbar { display: grid; grid-template-columns: 1fr; width: 100%; }
             .admin-control-pill, .admin-toolbar > .relative, .admin-toolbar > button, .admin-toolbar > .relative > button { width: 100%; }
             .admin-logout-btn { width: 100%; border-radius: 999px; }
+            /* Show all 4 tabs at once on phones: 2x2 grid instead of horizontal scroll */
+            .admin-tabs-row .segmented-control { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; overflow: visible; }
+            .admin-tabs-row .segmented-control button { padding: 9px 8px; font-size: 13px; }
         }
 
         ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -260,7 +266,7 @@
 
             <!-- 2. Admin Dashboard View -->
             <div id="view-admin-dashboard" class="app-view hidden">
-                <div class="mb-8 admin-dashboard-header">
+                <div class="mb-8 admin-dashboard-header bg-apple-surface rounded-3xl shadow-apple p-5 sm:p-6">
                     <div class="admin-heading">
                         <div class="admin-heading-icon">
                             <i class="fa-solid fa-unlock-keyhole text-xl"></i>
@@ -272,7 +278,7 @@
                     </div>
                     
                     <div class="admin-toolbar">
-                        <div class="admin-control-pill flex items-center gap-2 bg-apple-surface border border-apple-border rounded-full px-4 py-2 w-full sm:w-auto">
+                        <div class="admin-control-pill flex items-center gap-2 bg-apple-gray border border-apple-border/60 rounded-full px-4 py-2 w-full sm:w-auto">
                             <i class="fa-solid fa-user-shield text-apple-muted text-sm"></i>
                             <select id="admin-role" onchange="handleAdminRoleChange()" class="bg-transparent text-sm text-apple-text focus:outline-none">
                                 <option value="admin">ADMIN</option>
@@ -282,7 +288,7 @@
                             <span id="admin-role-badge" class="text-[10px] bg-apple-gray px-2 py-0.5 rounded-full text-apple-muted">Role</span>
                         </div>
                         <div class="relative w-full sm:w-auto">
-                            <button type="button" id="admin-notification-toggle" onclick="toggleAdminNotifications()" class="admin-control-pill relative flex items-center justify-center gap-2 bg-apple-surface border border-apple-border rounded-full px-4 py-2 w-full sm:w-auto text-sm text-apple-text hover:bg-apple-gray transition-colors">
+                            <button type="button" id="admin-notification-toggle" onclick="toggleAdminNotifications()" class="admin-control-pill relative flex items-center justify-center gap-2 bg-apple-gray border border-apple-border/60 rounded-full px-4 py-2 w-full sm:w-auto text-sm text-apple-text hover:bg-apple-border transition-colors">
                                 <i class="fa-solid fa-bell text-apple-muted"></i>
                                 <span>แจ้งเตือน</span>
                                 <span id="admin-notification-count" class="notification-badge hidden absolute -top-2 -right-1">0</span>
@@ -298,25 +304,17 @@
                                 <div id="admin-notification-list" class="max-h-96 overflow-y-auto p-3 space-y-2"></div>
                             </div>
                         </div>
-                        <div class="admin-control-pill flex items-center gap-2 bg-apple-surface border border-apple-border rounded-full px-4 py-2 w-full sm:w-auto">
-                            <i class="fa-solid fa-filter text-apple-muted text-sm"></i>
-                            <select id="meeting-status-filter" onchange="renderAdminMeetingsList()" class="bg-transparent text-sm text-apple-text focus:outline-none">
-                                <option value="all">ทั้งหมด</option>
-                                <option value="active">Active</option>
-                                <option value="inactive">Inactive</option>
-                            </select>
-                        </div>
-                        <button onclick="adminLogout()" class="admin-logout-btn bg-apple-surface border border-apple-border text-apple-muted hover:text-ems-red hover:bg-red-50 transition-colors flex items-center justify-center shrink-0 self-end sm:self-auto rounded-full" title="ออกจากระบบ Admin">
+                        <button onclick="adminLogout()" aria-label="ออกจากระบบ Admin" class="admin-logout-btn bg-apple-gray border border-apple-border/60 text-apple-muted hover:text-ems-red hover:bg-red-50 transition-colors flex items-center justify-center shrink-0 self-end sm:self-auto rounded-full" title="ออกจากระบบ Admin">
                             <i class="fa-solid fa-right-from-bracket"></i>
                         </button>
                     </div>
 
                     <div class="admin-tabs-row">
                         <div class="segmented-control flex-grow sm:flex-grow-0 w-full overflow-x-auto no-scrollbar">
-                            <button id="tab-meetings" onclick="switchAdminTab('meetings')" class="active">การประชุม</button>
-                            <button id="tab-attendees" onclick="switchAdminTab('attendees')">รายชื่อ & เอกสาร</button>
-                            <button id="tab-history" onclick="switchAdminTab('history')" class="relative">ประวัติ<span id="history-unread-badge" class="notification-badge hidden absolute -top-2 -right-2">0</span></button>
-                            <button id="tab-users" onclick="switchAdminTab('users')">User Control</button>
+                            <button id="tab-meetings" onclick="switchAdminTab('meetings')" class="active"><i class="fa-solid fa-calendar-days"></i>การประชุม</button>
+                            <button id="tab-attendees" onclick="switchAdminTab('attendees')"><i class="fa-solid fa-folder-open"></i>รายชื่อ & เอกสาร</button>
+                            <button id="tab-history" onclick="switchAdminTab('history')" class="relative"><i class="fa-solid fa-clock-rotate-left"></i>ประวัติ<span id="history-unread-badge" class="notification-badge hidden absolute -top-2 -right-2">0</span></button>
+                            <button id="tab-users" onclick="switchAdminTab('users')"><i class="fa-solid fa-user-gear"></i>User Control</button>
                         </div>
                     </div>
                 </div>
@@ -382,7 +380,20 @@
                     </div>
 
                     <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple">
-                        <h3 class="font-heading font-semibold text-lg mb-4">รายการทั้งหมด</h3>
+                        <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+                            <div class="flex items-center gap-2.5">
+                                <h3 class="font-heading font-semibold text-lg">รายการทั้งหมด</h3>
+                                <span class="bg-apple-gray text-apple-text text-xs font-bold px-3 py-1 rounded-full"><span id="meeting-count">0</span> รายการ</span>
+                            </div>
+                            <div class="flex items-center gap-2 bg-apple-gray border border-apple-border/60 rounded-full px-4 py-2 w-full sm:w-auto">
+                                <i class="fa-solid fa-filter text-apple-muted text-sm"></i>
+                                <select id="meeting-status-filter" onchange="renderAdminMeetingsList()" class="bg-transparent text-sm text-apple-text focus:outline-none flex-1 sm:flex-none">
+                                    <option value="all">สถานะ: ทั้งหมด</option>
+                                    <option value="active">Active</option>
+                                    <option value="inactive">Inactive</option>
+                                </select>
+                            </div>
+                        </div>
                         <div class="table-wrap md-cards">
                         <div class="overflow-x-auto table-scroll">
                             <table class="w-full text-left border-collapse min-w-[760px]">
@@ -2997,7 +3008,9 @@
 
         function renderAdminMeetingsList() {
             const tbody = document.getElementById('admin-meetings-list');
+            const meetingCountEl = document.getElementById('meeting-count');
             tbody.innerHTML = '';
+            if (meetingCountEl) meetingCountEl.innerText = '0';
 
             if (db.meetings.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="6" class="text-center py-12 text-apple-muted"><i class="fa-regular fa-calendar-plus text-3xl mb-3 block opacity-40"></i>ยังไม่มีข้อมูลการประชุม — เริ่มต้นด้วยการกรอกฟอร์มด้านบน</td></tr>`;
@@ -3014,6 +3027,8 @@
                 tbody.innerHTML = `<tr><td colspan="6" class="text-center py-12 text-apple-muted"><i class="fa-solid fa-filter-circle-xmark text-3xl mb-3 block opacity-40"></i>ไม่พบรายการประชุมตามตัวกรองที่เลือก</td></tr>`;
                 return;
             }
+
+            if (meetingCountEl) meetingCountEl.innerText = sortedMtg.length;
 
             sortedMtg.forEach(m => {
                 const isActive = m.isActive !== false;
