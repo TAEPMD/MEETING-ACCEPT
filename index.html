@@ -668,7 +668,7 @@
                                     <i class="fa-solid fa-file-lines text-xl"></i>
                                 </div>
                                 <div>
-                                    <h4 class="font-heading font-semibold text-blue-800">รายละเอียดโครงการ</h4>
+                                    <h4 id="agenda-section-title" class="font-heading font-semibold text-blue-800">วาระการประชุม</h4>
                                     <p id="agenda-file-name" class="text-xs text-blue-700/80">ไฟล์แนบสำหรับผู้เข้าร่วมทุกคน</p>
                                 </div>
                             </div>
@@ -677,7 +677,7 @@
                                     <i class="fa-solid fa-eye mr-1"></i> View PDF
                                 </a>
                             <a id="download-agenda-btn" href="#" target="_blank" class="w-full sm:w-auto px-5 py-2.5 bg-blue-600 text-white font-medium rounded-full text-center shadow-sm hover:scale-105 transition-transform text-sm">
-                                <i class="fa-solid fa-download mr-1"></i> ดาวน์โหลดรายละเอียด
+                                <i class="fa-solid fa-download mr-1"></i> <span id="download-agenda-btn-label">ดาวน์โหลดวาระ</span>
                             </a>
                             </div>
                         </div>
@@ -688,7 +688,7 @@
                                     <i class="fa-solid fa-file-lines text-xl"></i>
                                 </div>
                                 <div>
-                                    <h4 class="font-heading font-semibold text-purple-800">ตารางเวลาฝึกอบรม</h4>
+                                    <h4 id="report-section-title" class="font-heading font-semibold text-purple-800">รายงานการประชุม</h4>
                                     <p id="report-file-name" class="text-xs text-purple-700/80">ไฟล์แนบสำหรับผู้เข้าร่วมทุกคน</p>
                                 </div>
                             </div>
@@ -697,7 +697,7 @@
                                     <i class="fa-solid fa-eye mr-1"></i> View PDF
                                 </a>
                             <a id="download-report-btn" href="#" target="_blank" class="w-full sm:w-auto px-5 py-2.5 bg-purple-600 text-white font-medium rounded-full text-center shadow-sm hover:scale-105 transition-transform text-sm">
-                                <i class="fa-solid fa-download mr-1"></i> ดาวน์โหลดตารางเวลา
+                                <i class="fa-solid fa-download mr-1"></i> <span id="download-report-btn-label">ดาวน์โหลดรายงาน</span>
                             </a>
                             </div>
                         </div>
@@ -1424,7 +1424,11 @@
                 'user-step1-label': isSpeaker ? '1. เลือกงานที่ได้รับเชิญเป็นวิทยากร' : '1. เลือกการประชุม',
                 'attendance-section-label': isSpeaker ? '3. การตอบรับการเป็นวิทยากร' : '3. สถานะการเข้าร่วม',
                 'choice-attend-label': isSpeaker ? 'ยินดีรับเป็นวิทยากร' : 'ยินดีเข้าร่วม',
-                'choice-decline-label': isSpeaker ? 'ไม่สามารถรับเป็นวิทยากรได้' : 'ไม่สามารถเข้าร่วมได้'
+                'choice-decline-label': isSpeaker ? 'ไม่สามารถรับเป็นวิทยากรได้' : 'ไม่สามารถเข้าร่วมได้',
+                'agenda-section-title': isSpeaker ? 'รายละเอียดโครงการ' : 'วาระการประชุม',
+                'report-section-title': isSpeaker ? 'ตารางเวลาฝึกอบรม' : 'รายงานการประชุม',
+                'download-agenda-btn-label': isSpeaker ? 'ดาวน์โหลดรายละเอียด' : 'ดาวน์โหลดวาระ',
+                'download-report-btn-label': isSpeaker ? 'ดาวน์โหลดตารางเวลา' : 'ดาวน์โหลดรายงาน'
             };
             Object.keys(texts).forEach(id => {
                 const el = document.getElementById(id);
@@ -3173,14 +3177,14 @@
                 if (meeting.agendaUrl) {
                     agendaBtn.href = meeting.agendaUrl;
                     if (viewAgendaBtn) viewAgendaBtn.href = getPdfViewUrl(meeting.agendaUrl);
-                    agendaName.innerText = meeting.agendaName || 'ไฟล์รายละเอียดโครงการ';
+                    agendaName.innerText = meeting.agendaName || (isSpeakerMeeting(meeting) ? 'ไฟล์รายละเอียดโครงการ' : 'ไฟล์วาระการประชุม');
                     agendaSection.classList.remove('hidden');
                 }
 
                 if (meeting.reportUrl) {
                     reportBtn.href = meeting.reportUrl;
                     if (viewReportBtn) viewReportBtn.href = getPdfViewUrl(meeting.reportUrl);
-                    reportName.innerText = meeting.reportName || 'ไฟล์ตารางเวลาฝึกอบรม';
+                    reportName.innerText = meeting.reportName || (isSpeakerMeeting(meeting) ? 'ไฟล์ตารางเวลาฝึกอบรม' : 'ไฟล์รายงานการประชุม');
                     reportSection.classList.remove('hidden');
                 }
             }
