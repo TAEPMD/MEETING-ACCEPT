@@ -668,7 +668,7 @@
                                     <i class="fa-solid fa-file-lines text-xl"></i>
                                 </div>
                                 <div>
-                                    <h4 class="font-heading font-semibold text-blue-800">วาระการประชุม</h4>
+                                    <h4 class="font-heading font-semibold text-blue-800">รายละเอียดโครงการ</h4>
                                     <p id="agenda-file-name" class="text-xs text-blue-700/80">ไฟล์แนบสำหรับผู้เข้าร่วมทุกคน</p>
                                 </div>
                             </div>
@@ -677,7 +677,7 @@
                                     <i class="fa-solid fa-eye mr-1"></i> View PDF
                                 </a>
                             <a id="download-agenda-btn" href="#" target="_blank" class="w-full sm:w-auto px-5 py-2.5 bg-blue-600 text-white font-medium rounded-full text-center shadow-sm hover:scale-105 transition-transform text-sm">
-                                <i class="fa-solid fa-download mr-1"></i> ดาวน์โหลดวาระ
+                                <i class="fa-solid fa-download mr-1"></i> ดาวน์โหลดรายละเอียด
                             </a>
                             </div>
                         </div>
@@ -688,7 +688,7 @@
                                     <i class="fa-solid fa-file-lines text-xl"></i>
                                 </div>
                                 <div>
-                                    <h4 class="font-heading font-semibold text-purple-800">รายงานการประชุม</h4>
+                                    <h4 class="font-heading font-semibold text-purple-800">ตารางเวลาฝึกอบรม</h4>
                                     <p id="report-file-name" class="text-xs text-purple-700/80">ไฟล์แนบสำหรับผู้เข้าร่วมทุกคน</p>
                                 </div>
                             </div>
@@ -697,7 +697,7 @@
                                     <i class="fa-solid fa-eye mr-1"></i> View PDF
                                 </a>
                             <a id="download-report-btn" href="#" target="_blank" class="w-full sm:w-auto px-5 py-2.5 bg-purple-600 text-white font-medium rounded-full text-center shadow-sm hover:scale-105 transition-transform text-sm">
-                                <i class="fa-solid fa-download mr-1"></i> ดาวน์โหลดรายงาน
+                                <i class="fa-solid fa-download mr-1"></i> ดาวน์โหลดตารางเวลา
                             </a>
                             </div>
                         </div>
@@ -3173,14 +3173,14 @@
                 if (meeting.agendaUrl) {
                     agendaBtn.href = meeting.agendaUrl;
                     if (viewAgendaBtn) viewAgendaBtn.href = getPdfViewUrl(meeting.agendaUrl);
-                    agendaName.innerText = meeting.agendaName || 'ไฟล์วาระการประชุม';
+                    agendaName.innerText = meeting.agendaName || 'ไฟล์รายละเอียดโครงการ';
                     agendaSection.classList.remove('hidden');
                 }
 
                 if (meeting.reportUrl) {
                     reportBtn.href = meeting.reportUrl;
                     if (viewReportBtn) viewReportBtn.href = getPdfViewUrl(meeting.reportUrl);
-                    reportName.innerText = meeting.reportName || 'ไฟล์รายงานการประชุม';
+                    reportName.innerText = meeting.reportName || 'ไฟล์ตารางเวลาฝึกอบรม';
                     reportSection.classList.remove('hidden');
                 }
             }
