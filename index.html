@@ -852,7 +852,9 @@
         let adminNotificationPollTimer = null;
 
         const APP_CONFIG = {
-            apiProxyUrl: '/api/gas'
+            apiProxyUrl: '/api/gas',
+            // เผื่อเวลาให้ยาวกว่า maxDuration ของ Vercel function เล็กน้อย
+            requestTimeoutMs: 90000
         };
 
         function isGasRuntime() {
@@ -880,10 +882,15 @@
                     payload: safeArgs
                 };
 
+                // กันหน้าจอค้างถาวรถ้า proxy หรือ Apps Script ไม่ตอบกลับเลย
+                const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                const timeoutId = controller ? setTimeout(() => controller.abort(), APP_CONFIG.requestTimeoutMs) : null;
+
                 return fetch(APP_CONFIG.apiProxyUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(proxyBody)
+                    body: JSON.stringify(proxyBody),
+                    signal: controller ? controller.signal : undefined
                 }).then(async (resp) => {
                     let json = null;
                     try { json = await resp.json(); } catch (e) {}
@@ -895,6 +902,13 @@
                         throw new Error('proxy_logic:' + ((json && json.error) || 'Server response error'));
                     }
                     return json.data;
+                }).catch((err) => {
+                    if (err && err.name === 'AbortError') {
+                        throw new Error('proxy_timeout');
+                    }
+                    throw err;
+                }).finally(() => {
+                    if (timeoutId) clearTimeout(timeoutId);
                 });
             }
 
@@ -909,6 +923,12 @@
                 }
                 if (message.indexOf('Invalid JSON from GAS') > -1) {
                     return 'Apps Script ตอบกลับไม่ถูกต้อง กรุณาแจ้งผู้ดูแลระบบให้ตรวจสอบ Web App URL และสิทธิ์การเข้าถึง';
+                }
+                if (message.indexOf('proxy_timeout') > -1) {
+                    return 'เซิร์ฟเวอร์ใช้เวลานานเกินกำหนดและไม่ตอบกลับ กรุณาลองใหม่ หากเป็นการอัปโหลดไฟล์ ให้ลดขนาดไฟล์แล้วลองอีกครั้ง';
+                }
+                if (message.indexOf('proxy_http_413') === 0 || message.indexOf('proxy_http_504') === 0) {
+                    return 'ไฟล์หรือข้อมูลที่ส่งมีขนาดใหญ่เกินกว่าที่ระบบรับได้ กรุณาบีบอัดไฟล์ PDF ให้เล็กลงแล้วลองใหม่';
                 }
                 return 'เชื่อมต่อฐานข้อมูลไม่สำเร็จ กรุณาลองใหม่หรือติดต่อผู้ดูแลระบบ (' + message + ')';
             }
@@ -1581,6 +1601,21 @@
             });
         }
 
+        // ขนาดไฟล์สูงสุดที่ส่งผ่าน API proxy ได้
+        // Vercel จำกัด request body ประมาณ 4.5 MB และการแปลงเป็น base64 ทำให้ข้อมูลใหญ่ขึ้นราว 37%
+        const MAX_UPLOAD_FILE_BYTES = 3.2 * 1024 * 1024;
+
+        function validateUploadFile(file) {
+            if (!file) return 'ไม่พบไฟล์ที่เลือก';
+            if (file.size === 0) return 'ไฟล์ที่เลือกว่างเปล่า กรุณาเลือกไฟล์ใหม่';
+            if (file.size > MAX_UPLOAD_FILE_BYTES) {
+                const sizeMb = (file.size / 1024 / 1024).toFixed(1);
+                const limitMb = (MAX_UPLOAD_FILE_BYTES / 1024 / 1024).toFixed(1);
+                return `ไฟล์มีขนาด ${sizeMb} MB เกินขีดจำกัด ${limitMb} MB กรุณาบีบอัด (compress) ไฟล์ PDF ก่อนอัปโหลด`;
+            }
+            return '';
+        }
+
         function triggerIndividualUpload(mtgId, name) {
             if (!guardManagePermission()) return;
             if (!canCurrentRoleUpload(mtgId)) {
@@ -1594,79 +1629,99 @@
 
         function handleIndividualUpload(e) {
             if (!guardManagePermission()) return;
-            const file = e.target.files[0]; if (!file) return;
+
+            const input = e.target;
+            const file = input.files[0];
             const { mtgId, name, userIndex } = currentUploadTarget;
             const users = db.attendees[mtgId];
-            
-            if (userIndex > -1 && users && users[userIndex]) {
-                // ค้นหาปุ่ม upload สำหรับรายชื่อนี้โดยใช้ ID ที่สอดคล้อง
-                const uploadBtnId = `upload-btn-${mtgId}-${userIndex}`;
-                const uploadBtn = document.getElementById(uploadBtnId);
-                const originalHTML = uploadBtn ? uploadBtn.innerHTML : '<i class="fa-solid fa-paperclip mr-1"></i> แนบไฟล์';
-                
-                // เพิ่ม loading state บนปุ่ม
-                if (uploadBtn) {
-                    uploadBtn.disabled = true;
-                    uploadBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> กำลังอัปโหลด...';
-                    uploadBtn.style.opacity = '0.6';
-                }
-                
-                const reader = new FileReader();
-                reader.onload = function(ev) {
-                    const base64Data = ev.target.result.split(',')[1];
-                    
-                    if(isGasRuntime() || isExternalApiReady()) {
-                        const oldFileId = db.attendees[mtgId][userIndex].fileId || "";
-                        const allowedRoles = getAllowedUploadRolesForMeeting(mtgId);
-                        callServer('uploadPdfToDrive', [base64Data, file.name, mtgId, name, oldFileId, currentAdminRole, allowedRoles], function(result) {
-                                if(uploadBtn) {
-                                    uploadBtn.disabled = false;
-                                    uploadBtn.innerHTML = originalHTML;
-                                    uploadBtn.style.opacity = '1';
-                                }
-                                if(result.success) {
-                                    db.attendees[mtgId][userIndex].pdfUrl = result.url;
-                                    db.attendees[mtgId][userIndex].pdfName = result.name;
-                                    db.attendees[mtgId][userIndex].fileId = result.fileId;
-                                    syncAttendeesToServer(mtgId, {
-                                        onSuccess: function() {
-                                            renderAttendees();
-                                            showAlert('success', 'อัปโหลดสำเร็จ', `ระบบแนบไฟล์สำหรับ ${name} และบันทึกข้อมูลลง Sheet เรียบร้อยแล้ว`);
-                                        },
-                                        onFailure: function(errorMessage) {
-                                            renderAttendees();
-                                            showAlert('warning', 'อัปโหลดสำเร็จบางส่วน', `อัปโหลดไฟล์สำหรับ ${name} สำเร็จแล้ว แต่บันทึกข้อมูลรายชื่อไม่สำเร็จ: ${errorMessage}`);
-                                        },
-                                        showError: false
-                                    });
-                                } else {
-                                    showAlert('error', 'ข้อผิดพลาด', 'อัปโหลดลง Drive ไม่สำเร็จ: ' + (result.error || "Unknown error"));
-                                }
-                            }, function(err) {
-                                if(uploadBtn) {
-                                    uploadBtn.disabled = false;
-                                    uploadBtn.innerHTML = originalHTML;
-                                    uploadBtn.style.opacity = '1';
-                                }
-                                showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อกับ Server ได้');
-                            });
-                    } else {
-                        // Mock Preview Mode
-                        setTimeout(() => {
-                            db.attendees[mtgId][userIndex].pdfUrl = ev.target.result;
-                            db.attendees[mtgId][userIndex].pdfName = file.name;
-                            if(uploadBtn) {
-                                uploadBtn.disabled = false;
-                                uploadBtn.innerHTML = originalHTML;
-                                uploadBtn.style.opacity = '1';
-                            }
-                            renderAttendees();
-                        }, 800);
-                    }
-                };
-                reader.readAsDataURL(file);
-                document.getElementById('temp-file-input').value = ''; 
+
+            function resetInput() { input.value = ''; }
+
+            if (!file) { resetInput(); return; }
+
+            if (!(userIndex > -1) || !users || !users[userIndex]) {
+                resetInput();
+                showAlert('error', 'ไม่พบรายชื่อ', 'ไม่พบรายชื่อที่ต้องการแนบไฟล์ กรุณารีเฟรชหน้าจอแล้วลองใหม่');
+                return;
             }
+
+            const fileError = validateUploadFile(file);
+            if (fileError) {
+                resetInput();
+                showAlert('warning', 'อัปโหลดไม่ได้', fileError);
+                return;
+            }
+
+            // ค้นหาปุ่ม upload สำหรับรายชื่อนี้โดยใช้ ID ที่สอดคล้อง
+            const uploadBtn = document.getElementById(`upload-btn-${mtgId}-${userIndex}`);
+            const originalHTML = uploadBtn ? uploadBtn.innerHTML : '<i class="fa-solid fa-paperclip mr-1"></i> แนบไฟล์';
+
+            function restoreButton() {
+                if (!uploadBtn) return;
+                uploadBtn.disabled = false;
+                uploadBtn.innerHTML = originalHTML;
+                uploadBtn.style.opacity = '1';
+            }
+
+            // เพิ่ม loading state บนปุ่ม
+            if (uploadBtn) {
+                uploadBtn.disabled = true;
+                uploadBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> กำลังอัปโหลด...';
+                uploadBtn.style.opacity = '0.6';
+            }
+
+            const reader = new FileReader();
+            reader.onload = async function(ev) {
+                try {
+                    const base64Data = String(ev.target.result || '').split(',')[1] || '';
+                    if (!base64Data) throw new Error('ไม่สามารถอ่านเนื้อหาไฟล์ได้');
+
+                    const oldFileId = users[userIndex].fileId || '';
+                    const allowedRoles = getAllowedUploadRolesForMeeting(mtgId);
+                    const result = await callServerAsync('uploadPdfToDrive', [
+                        base64Data,
+                        file.name,
+                        mtgId,
+                        name,
+                        oldFileId,
+                        currentAdminRole,
+                        allowedRoles
+                    ]);
+
+                    if (!result || !result.success) {
+                        throw new Error((result && result.error) || 'อัปโหลดลง Drive ไม่สำเร็จ');
+                    }
+
+                    users[userIndex].pdfUrl = result.url;
+                    users[userIndex].pdfName = result.name;
+                    users[userIndex].fileId = result.fileId;
+
+                    syncAttendeesToServer(mtgId, {
+                        onSuccess: function() {
+                            renderAttendees();
+                            showAlert('success', 'อัปโหลดสำเร็จ', `ระบบแนบไฟล์สำหรับ ${name} และบันทึกข้อมูลลง Sheet เรียบร้อยแล้ว`);
+                        },
+                        onFailure: function(errorMessage) {
+                            renderAttendees();
+                            showAlert('warning', 'อัปโหลดสำเร็จบางส่วน', `อัปโหลดไฟล์สำหรับ ${name} สำเร็จแล้ว แต่บันทึกข้อมูลรายชื่อไม่สำเร็จ: ${errorMessage}`);
+                        },
+                        showError: false
+                    });
+                } catch (err) {
+                    console.error('Failed to upload attendee file:', err);
+                    showAlert('error', 'อัปโหลดไม่สำเร็จ', String((err && err.message) || err));
+                } finally {
+                    restoreButton();
+                    resetInput();
+                }
+            };
+            reader.onerror = function() {
+                restoreButton();
+                resetInput();
+                showAlert('error', 'อ่านไฟล์ไม่สำเร็จ', 'ไม่สามารถอ่านไฟล์ที่เลือกได้ กรุณาลองใหม่อีกครั้ง');
+            };
+            reader.onabort = reader.onerror;
+            reader.readAsDataURL(file);
         }
 
         function removeIndividualPDF(mtgId, name) {
@@ -2720,6 +2775,14 @@
             const mtgIndex = db.meetings.findIndex(m => m.id === mtgId);
             if (mtgIndex < 0) return;
 
+            const fileError = validateUploadFile(file);
+            if (fileError) {
+                currentAgendaTargetMeetingId = null;
+                document.getElementById('agenda-file-input').value = '';
+                showAlert('warning', 'อัปโหลดไม่ได้', fileError);
+                return;
+            }
+
             setGlobalLoading(true, 'กำลังอัปโหลดวาระประชุม...');
             const reader = new FileReader();
             reader.onload = async function(ev) {
@@ -2780,6 +2843,14 @@
             const mtgId = currentReportTargetMeetingId;
             const mtgIndex = db.meetings.findIndex(m => m.id === mtgId);
             if (mtgIndex < 0) return;
+
+            const fileError = validateUploadFile(file);
+            if (fileError) {
+                currentReportTargetMeetingId = null;
+                document.getElementById('report-file-input').value = '';
+                showAlert('warning', 'อัปโหลดไม่ได้', fileError);
+                return;
+            }
 
             setGlobalLoading(true, 'กำลังอัปโหลดรายงานการประชุม...');
             const reader = new FileReader();
