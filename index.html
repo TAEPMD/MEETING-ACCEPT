@@ -228,7 +228,7 @@
                     <p class="text-apple-muted">กรุณาเลือกรูปแบบการเข้าใช้งานระบบ</p>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 max-w-4xl mx-auto">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 max-w-5xl mx-auto">
                     <div onclick="openUserDashboard('meeting')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openUserDashboard('meeting')}" class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple hover:shadow-apple-hover transition-all duration-300 cursor-pointer flex flex-col items-center text-center group border border-transparent hover:border-apple-border">
                         <div class="w-20 h-20 bg-apple-gray rounded-full flex items-center justify-center text-3xl text-apple-text group-hover:scale-110 transition-transform duration-300 mb-6">
                             <i class="fa-solid fa-user-check"></i>
@@ -246,6 +246,17 @@
                         </div>
                         <h3 class="font-heading font-semibold text-xl mb-2">วิทยากร</h3>
                         <p class="text-sm text-apple-muted">ตอบรับการเป็นวิทยากร แจ้งเหตุผล และดาวน์โหลดหนังสือเชิญส่วนตัว</p>
+                        <div class="mt-6 px-6 py-2 rounded-full bg-apple-gray text-sm font-medium text-apple-text group-hover:bg-ems-yellow group-hover:text-ems-dark transition-colors">
+                            เข้าสู่ระบบ <i class="fa-solid fa-arrow-right ml-1"></i>
+                        </div>
+                    </div>
+
+                    <div onclick="openUserDashboard('observer')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openUserDashboard('observer')}" class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple hover:shadow-apple-hover transition-all duration-300 cursor-pointer flex flex-col items-center text-center group border border-transparent hover:border-apple-border">
+                        <div class="w-20 h-20 bg-apple-gray rounded-full flex items-center justify-center text-3xl text-apple-text group-hover:scale-110 transition-transform duration-300 mb-6">
+                            <i class="fa-solid fa-eye"></i>
+                        </div>
+                        <h3 class="font-heading font-semibold text-xl mb-2">ผู้สังเกตการณ์</h3>
+                        <p class="text-sm text-apple-muted">ตอบรับการเข้าร่วมเป็นผู้สังเกตการณ์ แจ้งเหตุผล และดาวน์โหลดหนังสือเชิญส่วนตัว</p>
                         <div class="mt-6 px-6 py-2 rounded-full bg-apple-gray text-sm font-medium text-apple-text group-hover:bg-ems-yellow group-hover:text-ems-dark transition-colors">
                             เข้าสู่ระบบ <i class="fa-solid fa-arrow-right ml-1"></i>
                         </div>
@@ -336,6 +347,7 @@
                                 <select id="mtg-event-type" class="apple-input">
                                     <option value="meeting">การประชุม / อบรม</option>
                                     <option value="speaker">เชิญเป็นวิทยากร</option>
+                                    <option value="observer">เชิญเป็นผู้สังเกตการณ์</option>
                                 </select>
                             </div>
                             <div>
@@ -1032,14 +1044,16 @@
 
         function getResponseStatusLabel(response) {
             if (!response) return '-';
-            const isSpeaker = getResponseEventType(response) === 'speaker';
+            const eventType = getResponseEventType(response);
+            const isSpeaker = eventType === 'speaker';
+            const isObserver = eventType === 'observer';
             if (response.status === 'attend') {
                 const mode = response.attendanceMode
                     ? ` (${String(response.attendanceMode).toLowerCase() === 'online' ? 'Online' : 'Onsite'})`
                     : '';
-                return `${isSpeaker ? 'รับเป็นวิทยากร' : 'เข้าร่วม'}${mode}`;
+                return `${isSpeaker ? 'รับเป็นวิทยากร' : (isObserver ? 'เข้าร่วมสังเกตการณ์' : 'เข้าร่วม')}${mode}`;
             }
-            return isSpeaker ? 'ไม่รับเป็นวิทยากร' : 'ไม่เข้าร่วม';
+            return isSpeaker ? 'ไม่รับเป็นวิทยากร' : (isObserver ? 'ไม่เข้าร่วมสังเกตการณ์' : 'ไม่เข้าร่วม');
         }
 
         function getResponseStatusBadgeClass(response) {
@@ -1421,30 +1435,45 @@
             return db.meetings.find(m => m.id === mtgId);
         }
 
-        // ================= EVENT TYPE (ประชุม / วิทยากร) =================
+        // ================= EVENT TYPE (ประชุม / วิทยากร / ผู้สังเกตการณ์) =================
+        function getMeetingEventType(meeting) {
+            const v = String(meeting && meeting.eventType || '').toLowerCase();
+            if (v === 'speaker') return 'speaker';
+            if (v === 'observer') return 'observer';
+            return 'meeting';
+        }
+
         function isSpeakerMeeting(meeting) {
-            return !!meeting && String(meeting.eventType || '').toLowerCase() === 'speaker';
+            return getMeetingEventType(meeting) === 'speaker';
+        }
+
+        function isObserverMeeting(meeting) {
+            return getMeetingEventType(meeting) === 'observer';
         }
 
         function getResponseEventType(response) {
-            if (response && String(response.eventType || '').toLowerCase() === 'speaker') return 'speaker';
-            return isSpeakerMeeting(getMeetingById(response && response.meetingId)) ? 'speaker' : 'meeting';
+            const v = String(response && response.eventType || '').toLowerCase();
+            if (v === 'speaker') return 'speaker';
+            if (v === 'observer') return 'observer';
+            if (response && response.eventType) return 'meeting';
+            return getMeetingEventType(getMeetingById(response && response.meetingId));
         }
 
         function openUserDashboard(mode) {
-            currentResponderMode = mode === 'speaker' ? 'speaker' : 'meeting';
+            currentResponderMode = (mode === 'speaker' || mode === 'observer') ? mode : 'meeting';
             showView('user-dashboard');
         }
 
-        // ปรับข้อความบนฟอร์มตอบรับตามโหมด (ประชุม / วิทยากร)
+        // ปรับข้อความบนฟอร์มตอบรับตามโหมด (ประชุม / วิทยากร / ผู้สังเกตการณ์)
         function applyResponderModeUI(mode) {
             const isSpeaker = mode === 'speaker';
+            const isObserver = mode === 'observer';
             const texts = {
-                'user-dashboard-title': isSpeaker ? 'ตอบรับการเป็นวิทยากร' : 'ตอบรับเข้าร่วมประชุม',
-                'user-step1-label': isSpeaker ? '1. เลือกงานที่ได้รับเชิญเป็นวิทยากร' : '1. เลือกการประชุม',
-                'attendance-section-label': isSpeaker ? '3. การตอบรับการเป็นวิทยากร' : '3. สถานะการเข้าร่วม',
-                'choice-attend-label': isSpeaker ? 'ยินดีรับเป็นวิทยากร' : 'ยินดีเข้าร่วม',
-                'choice-decline-label': isSpeaker ? 'ไม่สามารถรับเป็นวิทยากรได้' : 'ไม่สามารถเข้าร่วมได้',
+                'user-dashboard-title': isSpeaker ? 'ตอบรับการเป็นวิทยากร' : (isObserver ? 'ตอบรับการเข้าร่วมเป็นผู้สังเกตการณ์' : 'ตอบรับเข้าร่วมประชุม'),
+                'user-step1-label': isSpeaker ? '1. เลือกงานที่ได้รับเชิญเป็นวิทยากร' : (isObserver ? '1. เลือกงานที่ได้รับเชิญเป็นผู้สังเกตการณ์' : '1. เลือกการประชุม'),
+                'attendance-section-label': isSpeaker ? '3. การตอบรับการเป็นวิทยากร' : (isObserver ? '3. การตอบรับการเข้าร่วมเป็นผู้สังเกตการณ์' : '3. สถานะการเข้าร่วม'),
+                'choice-attend-label': isSpeaker ? 'ยินดีรับเป็นวิทยากร' : (isObserver ? 'ยินดีเข้าร่วมเป็นผู้สังเกตการณ์' : 'ยินดีเข้าร่วม'),
+                'choice-decline-label': isSpeaker ? 'ไม่สามารถรับเป็นวิทยากรได้' : (isObserver ? 'ไม่สามารถเข้าร่วมเป็นผู้สังเกตการณ์ได้' : 'ไม่สามารถเข้าร่วมได้'),
                 'agenda-section-title': isSpeaker ? 'รายละเอียดโครงการ' : 'วาระการประชุม',
                 'report-section-title': isSpeaker ? 'ตารางเวลาฝึกอบรม' : 'รายงานการประชุม',
                 'download-agenda-btn-label': isSpeaker ? 'ดาวน์โหลดรายละเอียด' : 'ดาวน์โหลดวาระ',
@@ -1496,18 +1525,21 @@
             const userSelect = document.getElementById('user-select-meeting');
             const historyFilter = document.getElementById('admin-history-filter');
             
-            const wantSpeaker = currentResponderMode === 'speaker';
+            const wantMode = currentResponderMode;
             let adminOptions = `<option value="">-- กรุณาเลือกการประชุม --</option>`;
-            let userOptions = wantSpeaker
+            let userOptions = wantMode === 'speaker'
                 ? `<option value="">-- แตะเพื่อเลือกงานวิทยากร --</option>`
-                : `<option value="">-- กรุณาเลือกการประชุม --</option>`;
+                : (wantMode === 'observer'
+                    ? `<option value="">-- แตะเพื่อเลือกงานผู้สังเกตการณ์ --</option>`
+                    : `<option value="">-- กรุณาเลือกการประชุม --</option>`);
             let filterOptions = `<option value="all">-- แสดงประวัติการตอบรับทั้งหมด --</option>`;
             db.meetings.forEach(m => {
-                const typePrefix = isSpeakerMeeting(m) ? '[วิทยากร] ' : '';
+                const mType = getMeetingEventType(m);
+                const typePrefix = mType === 'speaker' ? '[วิทยากร] ' : (mType === 'observer' ? '[ผู้สังเกตการณ์] ' : '');
                 const optStr = `<option value="${escapeHtml(m.id)}">${typePrefix}${escapeHtml(m.topic)} (${formatDateThai(m.date)})</option>`;
                 if (m.isActive !== false) {
                     adminOptions += optStr;
-                    if (isSpeakerMeeting(m) === wantSpeaker) userOptions += optStr;
+                    if (mType === wantMode) userOptions += optStr;
                 }
                 filterOptions += optStr;
             });
@@ -2161,8 +2193,8 @@
                 r.time,
                 r.location,
                 r.status === 'attend'
-                    ? (getResponseEventType(r) === 'speaker' ? 'รับเป็นวิทยากร' : 'เข้าร่วม')
-                    : (getResponseEventType(r) === 'speaker' ? 'ไม่รับเป็นวิทยากร' : 'ไม่เข้าร่วม'),
+                    ? (getResponseEventType(r) === 'speaker' ? 'รับเป็นวิทยากร' : (getResponseEventType(r) === 'observer' ? 'เข้าร่วมสังเกตการณ์' : 'เข้าร่วม'))
+                    : (getResponseEventType(r) === 'speaker' ? 'ไม่รับเป็นวิทยากร' : (getResponseEventType(r) === 'observer' ? 'ไม่เข้าร่วมสังเกตการณ์' : 'ไม่เข้าร่วม')),
                 r.attendanceMode ? (String(r.attendanceMode).toLowerCase() === 'online' ? 'Online' : 'Onsite') : '',
                 r.reason,
                 r.email,
@@ -2210,10 +2242,10 @@
                 return;
             }
 
-            const isSpeaker = getResponseEventType(data) === 'speaker';
+            const respType = getResponseEventType(data);
             const statusText = data.status === 'attend'
-                ? (isSpeaker ? 'รับเป็นวิทยากร' : 'เข้าร่วม')
-                : (isSpeaker ? 'ไม่รับเป็นวิทยากร' : 'ไม่เข้าร่วม');
+                ? (respType === 'speaker' ? 'รับเป็นวิทยากร' : (respType === 'observer' ? 'เข้าร่วมสังเกตการณ์' : 'เข้าร่วม'))
+                : (respType === 'speaker' ? 'ไม่รับเป็นวิทยากร' : (respType === 'observer' ? 'ไม่เข้าร่วมสังเกตการณ์' : 'ไม่เข้าร่วม'));
             const modeText = data.attendanceMode
                 ? (String(data.attendanceMode).toLowerCase() === 'online' ? 'Online' : 'Onsite')
                 : '-';
@@ -2471,8 +2503,11 @@
             const modeLabel = existingResponse.attendanceMode
                 ? ` | รูปแบบ: ${existingResponse.attendanceMode.toLowerCase() === 'online' ? 'Online' : 'Onsite'}`
                 : '';
-            const existingSpeaker = getResponseEventType(existingResponse) === 'speaker';
-            summary.innerText = `บันทึกล่าสุดเมื่อ ${existingResponse.timestamp} | สถานะ: ${existingResponse.status === 'attend' ? (existingSpeaker ? 'รับเป็นวิทยากร' : 'เข้าร่วม') : (existingSpeaker ? 'ไม่รับเป็นวิทยากร' : 'ไม่เข้าร่วม')}${modeLabel}`;
+            const existingType = getResponseEventType(existingResponse);
+            const existingStatusText = existingResponse.status === 'attend'
+                ? (existingType === 'speaker' ? 'รับเป็นวิทยากร' : (existingType === 'observer' ? 'เข้าร่วมสังเกตการณ์' : 'เข้าร่วม'))
+                : (existingType === 'speaker' ? 'ไม่รับเป็นวิทยากร' : (existingType === 'observer' ? 'ไม่เข้าร่วมสังเกตการณ์' : 'ไม่เข้าร่วม'));
+            summary.innerText = `บันทึกล่าสุดเมื่อ ${existingResponse.timestamp} | สถานะ: ${existingStatusText}${modeLabel}`;
             banner.classList.remove('hidden');
             currentEditableResponseId = existingResponse.id;
             setResponseFormLocked(true);
@@ -2556,7 +2591,7 @@
                 date: document.getElementById('u-mtg-date').innerText, time: document.getElementById('u-mtg-time').innerText,
                 location: document.getElementById('u-mtg-location').innerText,
                 onlineLink: document.getElementById('u-mtg-online-link').href || '',
-                eventType: isSpeakerMeeting(meeting) ? 'speaker' : 'meeting',
+                eventType: getMeetingEventType(meeting),
                 attendanceMode: status === 'attend' ? attendanceMode : '',
                 email: userEmail,
                 name, status, reason, timestamp: formatThaiTimestamp(new Date())
@@ -2600,10 +2635,12 @@
         }
 
         function showSuccessDialog(data) {
-            const isSpeakerResp = getResponseEventType(data) === 'speaker';
+            const respType = getResponseEventType(data);
+            const isSpeakerResp = respType === 'speaker';
+            const isObserverResp = respType === 'observer';
             let stHtml = data.status === 'attend'
-                ? `<span class="text-ems-green font-semibold">${isSpeakerResp ? 'รับเป็นวิทยากร' : 'เข้าร่วม'}</span>`
-                : `<span class="text-ems-red font-semibold">${isSpeakerResp ? 'ไม่รับเป็นวิทยากร' : 'ไม่เข้าร่วม'}</span>`;
+                ? `<span class="text-ems-green font-semibold">${isSpeakerResp ? 'รับเป็นวิทยากร' : (isObserverResp ? 'เข้าร่วมสังเกตการณ์' : 'เข้าร่วม')}</span>`
+                : `<span class="text-ems-red font-semibold">${isSpeakerResp ? 'ไม่รับเป็นวิทยากร' : (isObserverResp ? 'ไม่เข้าร่วมสังเกตการณ์' : 'ไม่เข้าร่วม')}</span>`;
             const modeText = data.attendanceMode ? (data.attendanceMode.toLowerCase() === 'online' ? 'Online' : 'Onsite') : '';
             const modeHtml = data.status === 'attend' && modeText
                 ? `<p class="text-sm text-apple-muted mt-1">รูปแบบ: <b>${modeText}</b></p>`
@@ -2645,9 +2682,11 @@
         }
 
         function executePrint(data, fromAdmin = false) {
-            const isSpeakerDoc = getResponseEventType(data) === 'speaker';
+            const printDocType = getResponseEventType(data);
+            const isSpeakerDoc = printDocType === 'speaker';
+            const isObserverDoc = printDocType === 'observer';
             const docTitle = document.getElementById('print-doc-title');
-            if (docTitle) docTitle.innerText = isSpeakerDoc ? 'หนังสือยืนยันการตอบรับการเป็นวิทยากร' : 'หนังสือยืนยันการตอบรับเข้าร่วมประชุม / อบรม';
+            if (docTitle) docTitle.innerText = isSpeakerDoc ? 'หนังสือยืนยันการตอบรับการเป็นวิทยากร' : (isObserverDoc ? 'หนังสือยืนยันการตอบรับการเข้าร่วมเป็นผู้สังเกตการณ์' : 'หนังสือยืนยันการตอบรับเข้าร่วมประชุม / อบรม');
             document.getElementById('print-ref').innerText = data.id; document.getElementById('print-timestamp').innerText = data.timestamp;
             document.getElementById('print-mtg-topic').innerText = data.topic; document.getElementById('print-mtg-datetime').innerText = `${data.date} เวลา ${data.time} น.`;
             document.getElementById('print-mtg-location').innerText = data.location || '-';
@@ -2665,7 +2704,7 @@
 
             const stEl = document.getElementById('print-status');
             if(data.status === 'attend') {
-                stEl.innerText = isSpeakerDoc ? "ยินดีรับเป็นวิทยากร" : "ยินดีเข้าร่วม";
+                stEl.innerText = isSpeakerDoc ? "ยินดีรับเป็นวิทยากร" : (isObserverDoc ? "ยินดีเข้าร่วมเป็นผู้สังเกตการณ์" : "ยินดีเข้าร่วม");
                 stEl.className = "doc-status-attend";
                 document.getElementById('print-reason-container').style.display = 'none';
                 if (data.attendanceMode) {
@@ -2675,7 +2714,7 @@
                     modeRow.style.display = 'none';
                 }
             }
-            else { stEl.innerText = isSpeakerDoc ? "ไม่สามารถรับเป็นวิทยากรได้" : "ไม่สามารถเข้าร่วมได้"; stEl.className = "doc-status-decline"; document.getElementById('print-reason-container').style.display = ''; document.getElementById('print-reason').innerText = data.reason; }
+            else { stEl.innerText = isSpeakerDoc ? "ไม่สามารถรับเป็นวิทยากรได้" : (isObserverDoc ? "ไม่สามารถเข้าร่วมเป็นผู้สังเกตการณ์ได้" : "ไม่สามารถเข้าร่วมได้"); stEl.className = "doc-status-decline"; document.getElementById('print-reason-container').style.display = ''; document.getElementById('print-reason').innerText = data.reason; }
             if (data.status !== 'attend') modeRow.style.display = 'none';
 
             document.getElementById('print-section').classList.remove('hidden'); window.print();
@@ -2917,7 +2956,7 @@
             document.getElementById('mtg-online-link').value = meeting.onlineLink || '';
             document.getElementById('mtg-hybrid-enabled').checked = !!meeting.hybridEnabled;
             if (document.getElementById('mtg-event-type')) {
-                document.getElementById('mtg-event-type').value = isSpeakerMeeting(meeting) ? 'speaker' : 'meeting';
+                document.getElementById('mtg-event-type').value = getMeetingEventType(meeting);
             }
             document.getElementById('mtg-upload-roles').value = meeting.uploadRoles || 'admin';
             if (document.getElementById('mtg-is-active')) {
@@ -3000,7 +3039,7 @@
 
                 const row = `
                     <tr class="group hover:bg-apple-gray transition-colors ${isActive ? '' : 'opacity-70'}">
-                        <td class="py-4 px-3 align-top"><p class="font-medium text-apple-text leading-snug">${escapeHtml(m.topic)}</p><div class="flex flex-wrap gap-1 mt-1.5">${isSpeakerMeeting(m) ? '<span class="inline-block text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full"><i class="fa-solid fa-person-chalkboard text-[9px] mr-0.5"></i>วิทยากร</span>' : ''}${m.hybridEnabled ? '<span class="inline-block text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Hybrid</span>' : ''}${respondedBadge}</div></td>
+                        <td class="py-4 px-3 align-top"><p class="font-medium text-apple-text leading-snug">${escapeHtml(m.topic)}</p><div class="flex flex-wrap gap-1 mt-1.5">${isSpeakerMeeting(m) ? '<span class="inline-block text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full"><i class="fa-solid fa-person-chalkboard text-[9px] mr-0.5"></i>วิทยากร</span>' : ''}${isObserverMeeting(m) ? '<span class="inline-block text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full"><i class="fa-solid fa-eye text-[9px] mr-0.5"></i>ผู้สังเกตการณ์</span>' : ''}${m.hybridEnabled ? '<span class="inline-block text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Hybrid</span>' : ''}${respondedBadge}</div></td>
                         <td data-label="วัน-เวลา" class="py-4 px-3 align-top text-sm whitespace-nowrap"><p><i class="fa-regular fa-calendar text-[11px] text-apple-muted mr-1"></i>${formatDateThai(m.date)}</p><p class="text-apple-muted mt-0.5"><i class="fa-regular fa-clock text-[11px] mr-1"></i>${escapeHtml(m.time)} น.</p></td>
                         <td data-label="สถานที่" class="py-4 px-3 align-top text-sm text-apple-muted"><span class="line-clamp-2 leading-snug" title="${escapeHtml(m.location)}">${escapeHtml(m.location)}</span></td>
                         <td data-label="สถานะ" class="py-4 px-3 align-top text-sm">${statusControl}</td>
@@ -3229,7 +3268,7 @@
             const meeting = getMeetingById(mtgId);
             if (meeting) {
                 // ปรับข้อความฟอร์มตามประเภทงานที่เลือกจริง (รองรับกรณีเข้าผ่าน QR)
-                applyResponderModeUI(isSpeakerMeeting(meeting) ? 'speaker' : 'meeting');
+                applyResponderModeUI(getMeetingEventType(meeting));
                 document.getElementById('u-mtg-topic').innerText = meeting.topic;
                 document.getElementById('u-mtg-date').innerText = formatDateThai(meeting.date);
                 document.getElementById('u-mtg-time').innerText = meeting.time;
@@ -3451,9 +3490,9 @@
             const meeting = getMeetingById(mtgId);
             const meetingTitle = meeting ? meeting.topic : mtgId;
             const meetingDate = meeting ? formatDateThai(meeting.date) : '';
-            const isSpeakerEvent = isSpeakerMeeting(meeting);
-            const qrPageLabel = isSpeakerEvent ? 'QR Code ตอบรับการเป็นวิทยากร รายบุคคล' : 'QR Code ตอบรับการประชุม รายบุคคล';
-            const qrScanHint = isSpeakerEvent ? 'สแกนเพื่อตอบรับการเป็นวิทยากร' : 'สแกนเพื่อตอบรับการประชุม';
+            const qrEventType = getMeetingEventType(meeting);
+            const qrPageLabel = qrEventType === 'speaker' ? 'QR Code ตอบรับการเป็นวิทยากร รายบุคคล' : (qrEventType === 'observer' ? 'QR Code ตอบรับผู้สังเกตการณ์ รายบุคคล' : 'QR Code ตอบรับการประชุม รายบุคคล');
+            const qrScanHint = qrEventType === 'speaker' ? 'สแกนเพื่อตอบรับการเป็นวิทยากร' : (qrEventType === 'observer' ? 'สแกนเพื่อตอบรับการเข้าร่วมเป็นผู้สังเกตการณ์' : 'สแกนเพื่อตอบรับการประชุม');
             const baseUrl = window.location.href.split('?')[0].split('#')[0];
 
             const attendeesData = attendees.map(u => ({
@@ -3554,7 +3593,7 @@ data.forEach(function(u) {
                 return;
             }
             const name = attendee.name;
-            currentResponderMode = isSpeakerMeeting(meeting) ? 'speaker' : 'meeting';
+            currentResponderMode = getMeetingEventType(meeting);
             showView('user-dashboard');
             setTimeout(() => {
                 const userMtgSelect = document.getElementById('user-select-meeting');
@@ -3568,7 +3607,7 @@ data.forEach(function(u) {
                     Swal.fire({
                         toast: true, position: 'top', icon: 'info',
                         title: `สวัสดี ${name}`,
-                        text: currentResponderMode === 'speaker' ? 'กรุณาตอบรับการเป็นวิทยากร' : 'กรุณาเลือกสถานะการเข้าร่วมประชุม',
+                        text: currentResponderMode === 'speaker' ? 'กรุณาตอบรับการเป็นวิทยากร' : (currentResponderMode === 'observer' ? 'กรุณาตอบรับการเข้าร่วมเป็นผู้สังเกตการณ์' : 'กรุณาเลือกสถานะการเข้าร่วมประชุม'),
                         showConfirmButton: false, timer: 3500, timerProgressBar: true,
                         customClass: { popup: 'rounded-2xl font-heading shadow-apple mt-4' }
                     });
