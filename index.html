@@ -251,12 +251,12 @@
                         </div>
                     </div>
 
-                    <div onclick="openUserDashboard('observer')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openUserDashboard('observer')}" class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple hover:shadow-apple-hover transition-all duration-300 cursor-pointer flex flex-col items-center text-center group border border-transparent hover:border-apple-border">
+                    <div onclick="openObserverRegistrationView()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openObserverRegistrationView()}" class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple hover:shadow-apple-hover transition-all duration-300 cursor-pointer flex flex-col items-center text-center group border border-transparent hover:border-apple-border">
                         <div class="w-20 h-20 bg-apple-gray rounded-full flex items-center justify-center text-3xl text-apple-text group-hover:scale-110 transition-transform duration-300 mb-6">
                             <i class="fa-solid fa-eye"></i>
                         </div>
                         <h3 class="font-heading font-semibold text-xl mb-2">ผู้สังเกตการณ์</h3>
-                        <p class="text-sm text-apple-muted">ตอบรับการเข้าร่วมเป็นผู้สังเกตการณ์ แจ้งเหตุผล และดาวน์โหลดหนังสือเชิญส่วนตัว</p>
+                        <p class="text-sm text-apple-muted">เลือกหลักสูตร/กิจกรรม แล้วลงทะเบียนผู้ประสานงานพร้อมรายชื่อผู้เข้าร่วมสังเกตการณ์ได้ด้วยตนเอง</p>
                         <div class="mt-6 px-6 py-2 rounded-full bg-apple-gray text-sm font-medium text-apple-text group-hover:bg-ems-yellow group-hover:text-ems-dark transition-colors">
                             เข้าสู่ระบบ <i class="fa-solid fa-arrow-right ml-1"></i>
                         </div>
@@ -324,6 +324,7 @@
                         <div class="segmented-control flex-grow sm:flex-grow-0 w-full overflow-x-auto no-scrollbar">
                             <button id="tab-meetings" onclick="switchAdminTab('meetings')" class="active"><i class="fa-solid fa-calendar-days"></i>การประชุม</button>
                             <button id="tab-attendees" onclick="switchAdminTab('attendees')"><i class="fa-solid fa-folder-open"></i>รายชื่อ & เอกสาร</button>
+                            <button id="tab-observers" onclick="switchAdminTab('observers')"><i class="fa-solid fa-eye"></i>ผู้สังเกตการณ์</button>
                             <button id="tab-history" onclick="switchAdminTab('history')" class="relative"><i class="fa-solid fa-clock-rotate-left"></i>ประวัติ<span id="history-unread-badge" class="notification-badge hidden absolute -top-2 -right-2">0</span></button>
                             <button id="tab-users" onclick="switchAdminTab('users')"><i class="fa-solid fa-user-gear"></i>User Control</button>
                         </div>
@@ -344,11 +345,15 @@
                             </div>
                             <div>
                                 <label class="block text-sm text-apple-muted mb-1 ml-1">ประเภทการตอบรับ</label>
-                                <select id="mtg-event-type" class="apple-input">
+                                <select id="mtg-event-type" onchange="toggleObserverQuotaField()" class="apple-input">
                                     <option value="meeting">การประชุม / อบรม</option>
                                     <option value="speaker">เชิญเป็นวิทยากร</option>
-                                    <option value="observer">เชิญเป็นผู้สังเกตการณ์</option>
+                                    <option value="observer">เปิดรับผู้สังเกตการณ์ (ลงทะเบียนเอง)</option>
                                 </select>
+                            </div>
+                            <div id="mtg-observer-quota-wrap" class="hidden">
+                                <label class="block text-sm text-apple-muted mb-1 ml-1">จำนวนผู้สังเกตการณ์สูงสุด (คน)</label>
+                                <input type="number" id="mtg-observer-quota" min="0" step="1" class="apple-input" placeholder="เว้นว่างหรือ 0 = ไม่จำกัดจำนวน">
                             </div>
                             <div>
                                 <label class="block text-sm text-apple-muted mb-1 ml-1">วันที่</label>
@@ -476,6 +481,42 @@
                             </div>
 
                             <ul id="attendees-list" class="divide-y divide-apple-border max-h-[500px] overflow-y-auto pr-2"></ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Admin Tab: Observers (ลงทะเบียนผู้สังเกตการณ์ด้วยตนเอง) -->
+                <div id="admin-tab-observers" class="admin-tab-content hidden space-y-6">
+                    <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple">
+                        <label class="block text-sm text-apple-muted mb-2 ml-1">เลือกหลักสูตร/กิจกรรมผู้สังเกตการณ์</label>
+                        <select id="admin-observer-select-meeting" onchange="renderObserverRegistrations()" class="apple-input font-heading text-lg">
+                            <option value="">-- กรุณาเลือก --</option>
+                        </select>
+                    </div>
+
+                    <div id="observer-manager" class="hidden space-y-6">
+                        <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple">
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <h3 class="font-heading font-semibold text-lg">สรุปโควตา</h3>
+                                    <p class="text-sm text-apple-muted mt-1">จำนวนที่ลงทะเบียนแล้ว เทียบกับโควตาที่แอดมินกำหนดไว้ในฟอร์มการประชุม</p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="text-2xl font-heading font-bold"><span id="observer-registered-count">0</span> / <span id="observer-quota-count">ไม่จำกัด</span></p>
+                                    <p class="text-xs text-apple-muted">คน</p>
+                                </div>
+                            </div>
+                            <div id="observer-quota-bar-wrap" class="hidden mt-4 h-2.5 rounded-full bg-apple-gray overflow-hidden">
+                                <div id="observer-quota-bar" class="h-full bg-ems-yellow transition-all" style="width:0%"></div>
+                            </div>
+                        </div>
+
+                        <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple">
+                            <div class="flex justify-between items-center mb-4 flex-wrap gap-3">
+                                <h3 class="font-heading font-semibold text-lg">รายการลงทะเบียน (ตามผู้ประสานงาน)</h3>
+                                <span class="bg-apple-gray text-apple-text text-xs font-bold px-3 py-1 rounded-full"><span id="observer-registration-count">0</span> รายการ</span>
+                            </div>
+                            <ul id="observer-registrations-list" class="divide-y divide-apple-border"></ul>
                         </div>
                     </div>
                 </div>
@@ -762,6 +803,75 @@
                 </div>
             </div>
 
+            <!-- 4. Observer Self-Registration View -->
+            <div id="view-observer-registration" class="app-view hidden">
+                <div class="mb-8">
+                    <h2 class="text-2xl font-heading font-bold">ลงทะเบียนผู้สังเกตการณ์</h2>
+                    <p class="text-apple-muted text-sm">เลือกหลักสูตร/กิจกรรมที่ต้องการเข้าร่วมสังเกตการณ์ แล้วกรอกข้อมูลผู้ประสานงานพร้อมรายชื่อผู้เข้าร่วม</p>
+                </div>
+
+                <div class="bg-apple-surface rounded-3xl p-6 sm:p-10 shadow-apple">
+                    <div class="mb-8">
+                        <label class="block font-heading font-medium mb-3 text-lg">1. เลือกหลักสูตร/กิจกรรม</label>
+                        <select id="obs-select-meeting" onchange="handleObsMeetingSelect()" class="apple-input text-lg py-4">
+                            <option value="">-- แตะเพื่อเลือกหลักสูตร/กิจกรรมผู้สังเกตการณ์ --</option>
+                        </select>
+                        <p id="obs-quota-status" class="text-sm mt-2 ml-1 hidden"></p>
+                    </div>
+
+                    <form id="obs-registration-form" class="hidden space-y-8" onsubmit="submitObserverRegistration(event)">
+                        <div class="bg-apple-gray p-5 rounded-2xl">
+                            <h3 id="obs-mtg-topic" class="font-heading font-semibold text-lg mb-2">ชื่อหลักสูตร/กิจกรรม</h3>
+                            <div class="space-y-1 text-sm text-apple-muted">
+                                <p><i class="fa-regular fa-calendar w-5"></i> <span id="obs-mtg-date"></span>, <span id="obs-mtg-time"></span> น.</p>
+                                <p><i class="fa-solid fa-location-dot w-5"></i> <span id="obs-mtg-location"></span></p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block font-heading font-medium mb-3 text-lg">2. ข้อมูลผู้ประสานงาน</label>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="md:col-span-2">
+                                    <label class="block text-sm text-apple-muted mb-1 ml-1">ชื่อ-นามสกุล ผู้ประสานงาน</label>
+                                    <input type="text" id="obs-coord-name" required class="apple-input" placeholder="เช่น นายเอ ใจดี">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-apple-muted mb-1 ml-1">หน่วยงาน</label>
+                                    <input type="text" id="obs-coord-agency" required class="apple-input" placeholder="เช่น รพ. / สสจ. / มูลนิธิ...">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-apple-muted mb-1 ml-1">เบอร์โทรศัพท์</label>
+                                    <input type="tel" id="obs-coord-phone" required class="apple-input" placeholder="0812345678">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-apple-muted mb-1 ml-1">อีเมล</label>
+                                    <input type="email" id="obs-coord-email" class="apple-input" placeholder="name@example.com (ไม่บังคับ)">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-apple-muted mb-1 ml-1">LINE ID</label>
+                                    <input type="text" id="obs-coord-line" class="apple-input" placeholder="ไม่บังคับ">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="flex items-center justify-between gap-3 mb-3">
+                                <label class="block font-heading font-medium text-lg">3. รายชื่อผู้เข้าร่วมสังเกตการณ์</label>
+                                <button type="button" onclick="addObserverNameRow()" class="shrink-0 text-sm font-semibold bg-apple-text text-white px-4 py-2 rounded-full hover:bg-gray-800 transition-colors"><i class="fa-solid fa-plus mr-1"></i> เพิ่มรายชื่อ</button>
+                            </div>
+                            <div id="obs-names-list" class="space-y-3"></div>
+                            <p class="text-xs text-apple-muted mt-2 ml-1">ระบุชื่อ-นามสกุล และตำแหน่ง/หน่วยงานย่อย ของผู้ที่จะเข้าร่วมสังเกตการณ์แต่ละคน</p>
+                        </div>
+
+                        <div class="pt-6 border-t border-apple-border">
+                            <button id="obs-submit-btn" type="submit" class="w-full py-4 rounded-2xl bg-ems-yellow text-ems-dark font-heading font-semibold text-lg shadow-sm hover:scale-[1.01] transition-all">
+                                <i class="fa-solid fa-paper-plane mr-1"></i> ส่งคำขอลงทะเบียน
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
         </div>
     </main>
 
@@ -848,7 +958,7 @@
     <!-- ================= JAVASCRIPT ================= -->
     <script>
         // --- State Local DB ---
-        let db = { meetings: [], attendees: {}, responses: [] };
+        let db = { meetings: [], attendees: {}, responses: [], users: [], observerRegistrations: [] };
         let currentUploadTarget = { mtgId: null, name: null };
         let currentAgendaTargetMeetingId = null;
         let currentReportTargetMeetingId = null;
@@ -994,7 +1104,7 @@
 
             const unreadBeforeRefresh = new Set(getUnreadResponses().map(r => getResponseNotificationId(r)));
             const serverData = await callServerAsync('getInitialData', []);
-            db = serverData || { meetings: [], attendees: {}, responses: [], users: [] };
+            db = serverData || { meetings: [], attendees: {}, responses: [], users: [], observerRegistrations: [] };
             await refreshRolePinHashesFromDb();
             renderAdminMeetingsList();
             populateMeetingDropdowns();
@@ -1399,6 +1509,12 @@
                 document.getElementById('attendance-mode-container').classList.add('hidden');
                 document.querySelectorAll('input[name="attendance"]').forEach(r => r.checked = false); document.getElementById('reason-container').classList.add('hidden');
             }
+            if (viewId === 'observer-registration') {
+                populateObserverMeetingDropdown();
+                document.getElementById('obs-select-meeting').value = '';
+                document.getElementById('obs-registration-form').classList.add('hidden');
+                document.getElementById('obs-quota-status').classList.add('hidden');
+            }
             window.scrollTo(0,0);
         }
 
@@ -1407,6 +1523,7 @@
             document.querySelectorAll('.segmented-control button').forEach(el => el.classList.remove('active'));
             document.getElementById('admin-tab-' + tab).classList.remove('hidden'); document.getElementById('tab-' + tab).classList.add('active');
             if(tab === 'attendees') populateMeetingDropdowns();
+            if(tab === 'observers') populateObserverAdminMeetingDropdown();
             if(tab === 'history') { populateMeetingDropdowns(); renderHistory(); markAdminNotificationsRead(); }
             if(tab === 'users') { renderUsersList(); resetUserForm(); }
         }
@@ -1485,6 +1602,245 @@
             });
         }
 
+        // ================= ผู้สังเกตการณ์: ลงทะเบียนด้วยตนเอง (เลือกหลักสูตร + กรอกข้อมูลผู้ประสานงาน + รายชื่อ) =================
+        function openObserverRegistrationView() {
+            showView('observer-registration');
+        }
+
+        function getObserverRegisteredCount(meetingId) {
+            return (db.observerRegistrations || [])
+                .filter(r => r.meetingId === meetingId)
+                .reduce((sum, r) => sum + (Number(r.observerCount) || (Array.isArray(r.observerNames) ? r.observerNames.length : 0)), 0);
+        }
+
+        // คืนค่าที่ว่างที่เหลือ, null = ไม่จำกัดจำนวน
+        function getObserverRemainingSlots(meeting) {
+            const quota = Number(meeting && meeting.observerQuota) || 0;
+            if (quota <= 0) return null;
+            return Math.max(0, quota - getObserverRegisteredCount(meeting.id));
+        }
+
+        function populateObserverMeetingDropdown() {
+            const select = document.getElementById('obs-select-meeting');
+            if (!select) return;
+            let options = `<option value="">-- แตะเพื่อเลือกหลักสูตร/กิจกรรมผู้สังเกตการณ์ --</option>`;
+            db.meetings.forEach(m => {
+                if (getMeetingEventType(m) !== 'observer' || m.isActive === false) return;
+                const remaining = getObserverRemainingSlots(m);
+                const isFull = remaining !== null && remaining <= 0;
+                const slotLabel = remaining === null ? '' : (isFull ? ' — เต็มแล้ว' : ` — เหลือที่ว่าง ${remaining} ที่`);
+                options += `<option value="${escapeHtml(m.id)}" ${isFull ? 'disabled' : ''}>${escapeHtml(m.topic)} (${formatDateThai(m.date)})${slotLabel}</option>`;
+            });
+            const oldValue = select.value;
+            select.innerHTML = options;
+            if (oldValue) select.value = oldValue;
+        }
+
+        function handleObsMeetingSelect() {
+            const mtgId = document.getElementById('obs-select-meeting').value;
+            const form = document.getElementById('obs-registration-form');
+            const quotaStatus = document.getElementById('obs-quota-status');
+            if (!mtgId) { form.classList.add('hidden'); quotaStatus.classList.add('hidden'); return; }
+
+            const meeting = getMeetingById(mtgId);
+            if (!meeting) { form.classList.add('hidden'); quotaStatus.classList.add('hidden'); return; }
+
+            document.getElementById('obs-mtg-topic').innerText = meeting.topic;
+            document.getElementById('obs-mtg-date').innerText = formatDateThai(meeting.date);
+            document.getElementById('obs-mtg-time').innerText = meeting.time;
+            document.getElementById('obs-mtg-location').innerText = meeting.location || meeting.onlineLink || '-';
+
+            const remaining = getObserverRemainingSlots(meeting);
+            if (remaining === null) {
+                quotaStatus.classList.add('hidden');
+            } else {
+                quotaStatus.classList.remove('hidden');
+                quotaStatus.className = `text-sm mt-2 ml-1 ${remaining > 0 ? 'text-apple-muted' : 'text-ems-red font-medium'}`;
+                quotaStatus.innerText = remaining > 0
+                    ? `เหลือที่ว่างสำหรับผู้สังเกตการณ์อีก ${remaining} ที่`
+                    : 'ขออภัย จำนวนผู้สังเกตการณ์เต็มแล้ว ไม่สามารถลงทะเบียนเพิ่มได้';
+            }
+
+            document.getElementById('obs-names-list').innerHTML = '';
+            addObserverNameRow();
+            form.classList.toggle('hidden', remaining !== null && remaining <= 0);
+        }
+
+        function addObserverNameRow() {
+            const list = document.getElementById('obs-names-list');
+            const row = document.createElement('div');
+            row.className = 'obs-name-row flex flex-col sm:flex-row gap-3 items-start bg-apple-gray/60 p-3 rounded-2xl';
+            row.innerHTML = `
+                <div class="flex-1 w-full">
+                    <input type="text" class="apple-input obs-name-input" placeholder="ชื่อ-นามสกุล" required>
+                </div>
+                <div class="flex-1 w-full">
+                    <input type="text" class="apple-input obs-position-input" placeholder="ตำแหน่ง/หน่วยงานย่อย (ไม่บังคับ)">
+                </div>
+                <button type="button" onclick="removeObserverNameRow(this)" class="shrink-0 text-ems-red hover:bg-red-50 p-2.5 rounded-full transition-colors" title="ลบรายชื่อนี้"><i class="fa-solid fa-trash-can"></i></button>
+            `;
+            list.appendChild(row);
+        }
+
+        function removeObserverNameRow(btn) {
+            const list = document.getElementById('obs-names-list');
+            if (list.children.length <= 1) return; // เหลืออย่างน้อย 1 แถวเสมอ
+            btn.closest('.obs-name-row').remove();
+        }
+
+        function collectObserverNameRows() {
+            return Array.from(document.querySelectorAll('#obs-names-list .obs-name-row')).map(row => ({
+                name: row.querySelector('.obs-name-input').value.trim(),
+                position: row.querySelector('.obs-position-input').value.trim()
+            })).filter(r => r.name);
+        }
+
+        async function submitObserverRegistration(e) {
+            e.preventDefault();
+            const mtgId = document.getElementById('obs-select-meeting').value;
+            const meeting = getMeetingById(mtgId);
+            if (!meeting) { showAlert('error', 'ข้อผิดพลาด', 'กรุณาเลือกหลักสูตร/กิจกรรม'); return; }
+
+            const observerNames = collectObserverNameRows();
+            if (observerNames.length === 0) {
+                showAlert('warning', 'กรอกข้อมูลไม่ครบ', 'กรุณาเพิ่มรายชื่อผู้ที่จะเข้าร่วมสังเกตการณ์อย่างน้อย 1 คน');
+                return;
+            }
+
+            const remaining = getObserverRemainingSlots(meeting);
+            if (remaining !== null && observerNames.length > remaining) {
+                showAlert('warning', 'เกินจำนวนที่รับได้', `เหลือที่ว่างอีก ${remaining} ที่ แต่ระบุรายชื่อมา ${observerNames.length} คน กรุณาลดจำนวนรายชื่อ`);
+                return;
+            }
+
+            const payload = {
+                meetingId: mtgId,
+                coordinatorName: document.getElementById('obs-coord-name').value.trim(),
+                agency: document.getElementById('obs-coord-agency').value.trim(),
+                phone: document.getElementById('obs-coord-phone').value.trim(),
+                email: document.getElementById('obs-coord-email').value.trim(),
+                lineId: document.getElementById('obs-coord-line').value.trim(),
+                observerNames: observerNames
+            };
+
+            setGlobalLoading(true, 'กำลังบันทึกการลงทะเบียน...');
+            try {
+                await callServerAsync('saveObserverRegistrationToServer', [payload]);
+                await refreshDbFromServer();
+                showAlert('success', 'ลงทะเบียนสำเร็จ', `บันทึกรายชื่อผู้สังเกตการณ์จำนวน ${observerNames.length} คน เรียบร้อยแล้ว`);
+                document.getElementById('obs-registration-form').reset();
+                document.getElementById('obs-names-list').innerHTML = '';
+                document.getElementById('obs-select-meeting').value = '';
+                document.getElementById('obs-registration-form').classList.add('hidden');
+                populateObserverMeetingDropdown();
+            } catch (err) {
+                console.error('Failed to save observer registration:', err);
+                showAlert('error', 'ลงทะเบียนไม่สำเร็จ', formatSyncError(err) || 'ไม่สามารถบันทึกการลงทะเบียนได้ กรุณาลองใหม่');
+            } finally {
+                setGlobalLoading(false);
+            }
+        }
+
+        // ================= ADMIN: ผู้สังเกตการณ์ (ดูรายการที่ลงทะเบียนเอง + จัดการโควตา) =================
+        function populateObserverAdminMeetingDropdown() {
+            const select = document.getElementById('admin-observer-select-meeting');
+            if (!select) return;
+            let options = `<option value="">-- กรุณาเลือก --</option>`;
+            db.meetings.forEach(m => {
+                if (getMeetingEventType(m) !== 'observer') return;
+                options += `<option value="${escapeHtml(m.id)}">${escapeHtml(m.topic)} (${formatDateThai(m.date)})</option>`;
+            });
+            const oldValue = select.value;
+            select.innerHTML = options;
+            if (oldValue) select.value = oldValue;
+            renderObserverRegistrations();
+        }
+
+        function renderObserverRegistrations() {
+            const mtgId = document.getElementById('admin-observer-select-meeting').value;
+            const manager = document.getElementById('observer-manager');
+            const list = document.getElementById('observer-registrations-list');
+            if (!mtgId) { manager.classList.add('hidden'); return; }
+            manager.classList.remove('hidden');
+
+            const meeting = getMeetingById(mtgId);
+            const registrations = (db.observerRegistrations || []).filter(r => r.meetingId === mtgId);
+            const registeredCount = getObserverRegisteredCount(mtgId);
+            const quota = Number(meeting && meeting.observerQuota) || 0;
+
+            document.getElementById('observer-registered-count').innerText = registeredCount;
+            document.getElementById('observer-quota-count').innerText = quota > 0 ? quota : 'ไม่จำกัด';
+            document.getElementById('observer-registration-count').innerText = registrations.length;
+
+            const barWrap = document.getElementById('observer-quota-bar-wrap');
+            if (quota > 0) {
+                barWrap.classList.remove('hidden');
+                const pct = Math.min(100, Math.round((registeredCount / quota) * 100));
+                const bar = document.getElementById('observer-quota-bar');
+                bar.style.width = pct + '%';
+                bar.className = `h-full transition-all ${pct >= 100 ? 'bg-ems-red' : 'bg-ems-yellow'}`;
+            } else {
+                barWrap.classList.add('hidden');
+            }
+
+            const canManage = canManageAdminData();
+            if (registrations.length === 0) {
+                list.innerHTML = `<li class="py-12 text-center text-apple-muted"><i class="fa-solid fa-user-group text-3xl mb-3 block opacity-40"></i>ยังไม่มีผู้ลงทะเบียนสำหรับหลักสูตร/กิจกรรมนี้</li>`;
+                return;
+            }
+
+            list.innerHTML = '';
+            registrations
+                .slice()
+                .sort((a, b) => parseDateStr(b.timestamp) - parseDateStr(a.timestamp))
+                .forEach(reg => {
+                    const namesHtml = (reg.observerNames || []).map(n =>
+                        `<li>${escapeHtml(n.name)}${n.position ? ` <span class="text-apple-muted">(${escapeHtml(n.position)})</span>` : ''}</li>`
+                    ).join('');
+                    const item = `
+                    <li class="py-4">
+                        <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <p class="font-heading font-semibold text-apple-text">${escapeHtml(reg.coordinatorName)} <span class="text-xs font-normal text-apple-muted">(ผู้ประสานงาน · ${escapeHtml(reg.agency)})</span></p>
+                                <div class="text-xs text-apple-muted mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                                    <span><i class="fa-solid fa-phone mr-1"></i>${escapeHtml(reg.phone || '-')}</span>
+                                    ${reg.email ? `<span><i class="fa-regular fa-envelope mr-1"></i>${escapeHtml(reg.email)}</span>` : ''}
+                                    ${reg.lineId ? `<span><i class="fa-brands fa-line mr-1"></i>${escapeHtml(reg.lineId)}</span>` : ''}
+                                    <span><i class="fa-regular fa-clock mr-1"></i>${escapeHtml(reg.timestamp)}</span>
+                                </div>
+                                <ul class="text-sm mt-2 list-disc list-inside space-y-0.5">${namesHtml}</ul>
+                            </div>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <span class="bg-apple-gray text-apple-text text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap">${(reg.observerNames || []).length} คน</span>
+                                ${canManage ? `<button onclick="deleteObserverRegistration('${reg.id}')" aria-label="ลบรายการ" class="text-apple-muted hover:text-ems-red p-1.5 rounded-full hover:bg-red-50 transition-colors" title="ลบรายการนี้"><i class="fa-solid fa-trash-can"></i></button>` : ''}
+                            </div>
+                        </div>
+                    </li>`;
+                    list.insertAdjacentHTML('beforeend', item);
+                });
+        }
+
+        function deleteObserverRegistration(id) {
+            if (!guardManagePermission()) return;
+            Swal.fire({
+                title: 'ยืนยันการลบ', text: "รายการลงทะเบียนของผู้ประสานงานนี้จะถูกลบถาวร และคืนที่ว่างให้โควตา", icon: 'warning',
+                showCancelButton: true, confirmButtonColor: '#FF3B30', cancelButtonColor: '#86868B',
+                confirmButtonText: 'ลบข้อมูล', cancelButtonText: 'ยกเลิก',
+                customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6', cancelButton: 'rounded-full px-6' }
+            }).then((result) => {
+                if (!result.isConfirmed) return;
+                setGlobalLoading(true, 'กำลังลบข้อมูล...');
+                callServer('deleteObserverRegistrationFromServer', [id], async function() {
+                    await refreshDbFromServer();
+                    renderObserverRegistrations();
+                    setGlobalLoading(false);
+                }, function(err) {
+                    setGlobalLoading(false);
+                    showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถลบข้อมูลได้');
+                });
+            });
+        }
+
         function getAllowedUploadRolesForMeeting(mtgId) {
             const meeting = getMeetingById(mtgId);
             return meeting && meeting.uploadRoles ? meeting.uploadRoles : 'admin';
@@ -1537,7 +1893,8 @@
                 const mType = getMeetingEventType(m);
                 const typePrefix = mType === 'speaker' ? '[วิทยากร] ' : (mType === 'observer' ? '[ผู้สังเกตการณ์] ' : '');
                 const optStr = `<option value="${escapeHtml(m.id)}">${typePrefix}${escapeHtml(m.topic)} (${formatDateThai(m.date)})</option>`;
-                if (m.isActive !== false) {
+                // ผู้สังเกตการณ์ลงทะเบียนเองแล้ว ไม่ต้องมีทะเบียนรายชื่อ/QR ส่วนตัวแบบเดิมอีก จึงไม่แสดงในแท็บ "รายชื่อ & เอกสาร"
+                if (m.isActive !== false && mType !== 'observer') {
                     adminOptions += optStr;
                     if (mType === wantMode) userOptions += optStr;
                 }
@@ -2742,6 +3099,7 @@
                 agendaFileId: '',
                 hybridEnabled: document.getElementById('mtg-hybrid-enabled').checked,
                 eventType: document.getElementById('mtg-event-type') ? document.getElementById('mtg-event-type').value : 'meeting',
+                observerQuota: parseInt(document.getElementById('mtg-observer-quota').value, 10) || 0,
                 uploadRoles: (document.getElementById('mtg-upload-roles').value || 'admin').trim(),
                 isActive: document.getElementById('mtg-is-active') ? document.getElementById('mtg-is-active').value !== 'inactive' : true,
                 reportUrl: '',
@@ -2958,6 +3316,8 @@
             if (document.getElementById('mtg-event-type')) {
                 document.getElementById('mtg-event-type').value = getMeetingEventType(meeting);
             }
+            document.getElementById('mtg-observer-quota').value = meeting.observerQuota ? meeting.observerQuota : '';
+            toggleObserverQuotaField();
             document.getElementById('mtg-upload-roles').value = meeting.uploadRoles || 'admin';
             if (document.getElementById('mtg-is-active')) {
                 document.getElementById('mtg-is-active').value = meeting.isActive === false ? 'inactive' : 'active';
@@ -2976,10 +3336,18 @@
             if (document.getElementById('mtg-event-type')) {
                 document.getElementById('mtg-event-type').value = 'meeting';
             }
+            document.getElementById('mtg-observer-quota').value = '';
+            toggleObserverQuotaField();
             if (document.getElementById('mtg-is-active')) {
                 document.getElementById('mtg-is-active').value = 'active';
             }
             document.getElementById('meeting-form-title').innerHTML = '<i class="fa-solid fa-calendar-plus text-apple-muted"></i> เพิ่มการประชุมใหม่';
+        }
+
+        function toggleObserverQuotaField() {
+            const isObserver = document.getElementById('mtg-event-type') && document.getElementById('mtg-event-type').value === 'observer';
+            const wrap = document.getElementById('mtg-observer-quota-wrap');
+            if (wrap) wrap.classList.toggle('hidden', !isObserver);
         }
 
         function renderAdminMeetingsList() {
