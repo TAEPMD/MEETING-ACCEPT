@@ -910,6 +910,23 @@ function saveObserverRegistrationToServer(payload) {
   ]);
   invalidateDbCache_();
 
+  var emailSent = false;
+  if (isValidEmail_(email)) {
+    emailSent = sendObserverRegistrationConfirmationEmail_({
+      id: id,
+      coordinatorName: coordinatorName,
+      agency: agency,
+      phone: phone,
+      email: email,
+      observerNames: observerNames,
+      timestamp: timestamp,
+      topic: String(meetingRow[1] || ''),
+      date: String(meetingRow[2] || ''),
+      time: String(meetingRow[3] || ''),
+      location: String(meetingRow[4] || '')
+    });
+  }
+
   return {
     id: id,
     meetingId: meetingId,
@@ -920,8 +937,65 @@ function saveObserverRegistrationToServer(payload) {
     lineId: lineId,
     observerNames: observerNames,
     observerCount: observerNames.length,
-    timestamp: timestamp
+    timestamp: timestamp,
+    emailSent: emailSent
   };
+}
+
+// ส่งอีเมลยืนยันการลงทะเบียนผู้สังเกตการณ์ (ล้มเหลวได้โดยไม่กระทบการบันทึกข้อมูล)
+function sendObserverRegistrationConfirmationEmail_(reg) {
+  try {
+    if (!isValidEmail_(reg.email)) return false;
+
+    var namesRows = reg.observerNames.map(function(o, idx) {
+      var posText = o.position ? ' (' + escapeHtml_(o.position) + ')' : '';
+      return '<li>' + escapeHtml_(o.name) + posText + '</li>';
+    }).join('');
+
+    var subject = '[สพฉ.] ยืนยันการลงทะเบียนผู้สังเกตการณ์: ' + reg.topic;
+
+    var detailRows = ''
+      + emailDetailRow_('เรื่อง / หัวข้อ', escapeHtml_(reg.topic))
+      + emailDetailRow_('วันที่', escapeHtml_(reg.date))
+      + emailDetailRow_('เวลา', reg.time ? escapeHtml_(reg.time) + ' น.' : '-')
+      + emailDetailRow_('สถานที่', escapeHtml_(reg.location || '-'))
+      + emailDetailRow_('ผู้ประสานงาน', escapeHtml_(reg.coordinatorName))
+      + emailDetailRow_('หน่วยงาน', escapeHtml_(reg.agency))
+      + emailDetailRow_('เบอร์โทร', escapeHtml_(reg.phone))
+      + emailDetailRow_('เลขที่อ้างอิง', escapeHtml_(reg.id))
+      + emailDetailRow_('บันทึกเมื่อ', escapeHtml_(reg.timestamp));
+
+    var htmlBody = ''
+      + '<div style="font-family: Tahoma, Arial, sans-serif; max-width: 560px; margin: 0 auto; border: 1px solid #E5E5EA; border-radius: 12px; overflow: hidden;">'
+      + '  <div style="background: #1D1D1F; color: #EDFF21; padding: 18px 24px;">'
+      + '    <p style="margin: 0; font-size: 16px; font-weight: bold;">สถาบันการแพทย์ฉุกเฉินแห่งชาติ (สพฉ.)</p>'
+      + '    <p style="margin: 4px 0 0; font-size: 12px; color: #FFFFFF;">ระบบตอบรับผู้สังเกตการณ์</p>'
+      + '  </div>'
+      + '  <div style="padding: 24px;">'
+      + '    <p style="font-size: 14px; margin: 0 0 8px;">เรียน คุณ' + escapeHtml_(reg.coordinatorName) + '</p>'
+      + '    <p style="font-size: 14px; margin: 0 0 16px;">ระบบได้รับการลงทะเบียนผู้สังเกตการณ์ของท่านเรียบร้อยแล้ว จำนวน '
+      + '      <b style="color: #0B7A2F;">' + reg.observerNames.length + ' คน</b></p>'
+      + '    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">' + detailRows + '</table>'
+      + '    <p style="font-size: 13px; font-weight: bold; margin: 16px 0 4px;">รายชื่อผู้เข้าร่วมสังเกตการณ์</p>'
+      + '    <ul style="font-size: 13px; margin: 0; padding-left: 20px;">' + namesRows + '</ul>'
+      + '    <p style="font-size: 12px; color: #666; margin: 16px 0 0;">หากข้อมูลไม่ถูกต้อง หรือต้องการแก้ไขการลงทะเบียน กรุณาติดต่อผู้จัดการประชุม</p>'
+      + '  </div>'
+      + '  <div style="background: #F5F5F7; padding: 12px 24px; font-size: 11px; color: #86868B;">'
+      + '    อีเมลฉบับนี้ส่งโดยระบบอัตโนมัติ กรุณาอย่าตอบกลับ | National Institute for Emergency Medicine'
+      + '  </div>'
+      + '</div>';
+
+    MailApp.sendEmail({
+      to: reg.email,
+      subject: subject,
+      htmlBody: htmlBody,
+      name: 'ระบบตอบรับการประชุม สพฉ.'
+    });
+    return true;
+  } catch (e) {
+    Logger.log('sendObserverRegistrationConfirmationEmail_ failed: ' + e);
+    return false;
+  }
 }
 
 // 4.3 ลบการลงทะเบียนผู้สังเกตการณ์ 1 รายการ (คืนที่ว่างให้โควตา)
