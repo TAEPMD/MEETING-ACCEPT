@@ -1722,7 +1722,9 @@
                 const result = await callServerAsync('saveObserverRegistrationToServer', [payload]);
                 await refreshDbFromServer();
                 const emailNote = payload.email
-                    ? (result && result.emailSent ? ' ระบบได้ส่งอีเมลยืนยันไปที่ ' + payload.email + ' แล้ว' : ' (ส่งอีเมลยืนยันไม่สำเร็จ กรุณาตรวจสอบอีเมลที่กรอก)')
+                    ? (result && result.emailSent
+                        ? ' ระบบได้ส่งอีเมลยืนยันไปที่ ' + payload.email + ' แล้ว'
+                        : ' (ส่งอีเมลยืนยันไม่สำเร็จ' + (result && result.emailError ? ': ' + result.emailError : ' กรุณาตรวจสอบอีเมลที่กรอก') + ')')
                     : '';
                 showAlert('success', 'ลงทะเบียนสำเร็จ', `บันทึกรายชื่อผู้สังเกตการณ์จำนวน ${observerNames.length} คน เรียบร้อยแล้ว${emailNote}`);
                 document.getElementById('obs-registration-form').reset();
