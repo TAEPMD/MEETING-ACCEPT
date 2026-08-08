@@ -352,8 +352,8 @@
                                 </select>
                             </div>
                             <div id="mtg-observer-quota-wrap" class="hidden">
-                                <label class="block text-sm text-apple-muted mb-1 ml-1">จำนวนผู้สังเกตการณ์สูงสุด (คน)</label>
-                                <input type="number" id="mtg-observer-quota" min="0" step="1" class="apple-input" placeholder="เว้นว่างหรือ 0 = ไม่จำกัดจำนวน">
+                                <label class="block text-sm text-apple-muted mb-1 ml-1">จำนวนผู้สังเกตการณ์สูงสุดต่อผู้ประสานงาน (คน)</label>
+                                <input type="number" id="mtg-observer-quota" min="0" step="1" class="apple-input" placeholder="เว้นว่างหรือ 0 = ไม่จำกัดจำนวนต่อผู้ประสานงาน">
                             </div>
                             <div>
                                 <label class="block text-sm text-apple-muted mb-1 ml-1">วันที่</label>
@@ -498,16 +498,13 @@
                         <div class="bg-apple-surface rounded-3xl p-6 sm:p-8 shadow-apple">
                             <div class="flex flex-wrap items-center justify-between gap-3">
                                 <div>
-                                    <h3 class="font-heading font-semibold text-lg">สรุปโควตา</h3>
-                                    <p class="text-sm text-apple-muted mt-1">จำนวนที่ลงทะเบียนแล้ว เทียบกับโควตาที่แอดมินกำหนดไว้ในฟอร์มการประชุม</p>
+                                    <h3 class="font-heading font-semibold text-lg">สรุปการลงทะเบียน</h3>
+                                    <p class="text-sm text-apple-muted mt-1">โควตาที่แอดมินกำหนดคือจำนวนสูงสุด "ต่อผู้ประสานงาน 1 ท่าน" ไม่ใช่โควตารวมของทั้งหลักสูตร/กิจกรรม</p>
                                 </div>
                                 <div class="text-right">
-                                    <p class="text-2xl font-heading font-bold"><span id="observer-registered-count">0</span> / <span id="observer-quota-count">ไม่จำกัด</span></p>
-                                    <p class="text-xs text-apple-muted">คน</p>
+                                    <p class="text-2xl font-heading font-bold"><span id="observer-registered-count">0</span> คน</p>
+                                    <p class="text-xs text-apple-muted">สูงสุด <span id="observer-quota-count">ไม่จำกัด</span> คน/ผู้ประสานงาน</p>
                                 </div>
-                            </div>
-                            <div id="observer-quota-bar-wrap" class="hidden mt-4 h-2.5 rounded-full bg-apple-gray overflow-hidden">
-                                <div id="observer-quota-bar" class="h-full bg-ems-yellow transition-all" style="width:0%"></div>
                             </div>
                         </div>
 
@@ -1613,11 +1610,11 @@
                 .reduce((sum, r) => sum + (Number(r.observerCount) || (Array.isArray(r.observerNames) ? r.observerNames.length : 0)), 0);
         }
 
-        // คืนค่าที่ว่างที่เหลือ, null = ไม่จำกัดจำนวน
-        function getObserverRemainingSlots(meeting) {
+        // จำนวนผู้สังเกตการณ์สูงสุดที่ผู้ประสานงาน 1 ท่านลงทะเบียนได้ต่อครั้ง, null = ไม่จำกัดจำนวน
+        // (โควตานี้เป็นของแต่ละผู้ประสานงาน ไม่ใช่โควตารวมของทั้งหลักสูตร/กิจกรรม)
+        function getObserverMaxNamesPerCoordinator(meeting) {
             const quota = Number(meeting && meeting.observerQuota) || 0;
-            if (quota <= 0) return null;
-            return Math.max(0, quota - getObserverRegisteredCount(meeting.id));
+            return quota > 0 ? quota : null;
         }
 
         function populateObserverMeetingDropdown() {
@@ -1626,10 +1623,9 @@
             let options = `<option value="">-- แตะเพื่อเลือกหลักสูตร/กิจกรรมผู้สังเกตการณ์ --</option>`;
             db.meetings.forEach(m => {
                 if (getMeetingEventType(m) !== 'observer' || m.isActive === false) return;
-                const remaining = getObserverRemainingSlots(m);
-                const isFull = remaining !== null && remaining <= 0;
-                const slotLabel = remaining === null ? '' : (isFull ? ' — เต็มแล้ว' : ` — เหลือที่ว่าง ${remaining} ที่`);
-                options += `<option value="${escapeHtml(m.id)}" ${isFull ? 'disabled' : ''}>${escapeHtml(m.topic)} (${formatDateThai(m.date)})${slotLabel}</option>`;
+                const maxPerCoordinator = getObserverMaxNamesPerCoordinator(m);
+                const quotaLabel = maxPerCoordinator === null ? '' : ` — สูงสุด ${maxPerCoordinator} คน/ผู้ประสานงาน`;
+                options += `<option value="${escapeHtml(m.id)}">${escapeHtml(m.topic)} (${formatDateThai(m.date)})${quotaLabel}</option>`;
             });
             const oldValue = select.value;
             select.innerHTML = options;
@@ -1650,20 +1646,18 @@
             document.getElementById('obs-mtg-time').innerText = meeting.time;
             document.getElementById('obs-mtg-location').innerText = meeting.location || meeting.onlineLink || '-';
 
-            const remaining = getObserverRemainingSlots(meeting);
-            if (remaining === null) {
+            const maxPerCoordinator = getObserverMaxNamesPerCoordinator(meeting);
+            if (maxPerCoordinator === null) {
                 quotaStatus.classList.add('hidden');
             } else {
                 quotaStatus.classList.remove('hidden');
-                quotaStatus.className = `text-sm mt-2 ml-1 ${remaining > 0 ? 'text-apple-muted' : 'text-ems-red font-medium'}`;
-                quotaStatus.innerText = remaining > 0
-                    ? `เหลือที่ว่างสำหรับผู้สังเกตการณ์อีก ${remaining} ที่`
-                    : 'ขออภัย จำนวนผู้สังเกตการณ์เต็มแล้ว ไม่สามารถลงทะเบียนเพิ่มได้';
+                quotaStatus.className = 'text-sm mt-2 ml-1 text-apple-muted';
+                quotaStatus.innerText = `ลงทะเบียนได้สูงสุด ${maxPerCoordinator} คน ต่อผู้ประสานงาน 1 ท่าน`;
             }
 
             document.getElementById('obs-names-list').innerHTML = '';
             addObserverNameRow();
-            form.classList.toggle('hidden', remaining !== null && remaining <= 0);
+            form.classList.remove('hidden');
         }
 
         function addObserverNameRow() {
@@ -1707,9 +1701,9 @@
                 return;
             }
 
-            const remaining = getObserverRemainingSlots(meeting);
-            if (remaining !== null && observerNames.length > remaining) {
-                showAlert('warning', 'เกินจำนวนที่รับได้', `เหลือที่ว่างอีก ${remaining} ที่ แต่ระบุรายชื่อมา ${observerNames.length} คน กรุณาลดจำนวนรายชื่อ`);
+            const maxPerCoordinator = getObserverMaxNamesPerCoordinator(meeting);
+            if (maxPerCoordinator !== null && observerNames.length > maxPerCoordinator) {
+                showAlert('warning', 'เกินจำนวนที่รับได้', `ลงทะเบียนได้สูงสุด ${maxPerCoordinator} คนต่อผู้ประสานงาน 1 ท่าน แต่ระบุรายชื่อมา ${observerNames.length} คน กรุณาลดจำนวนรายชื่อ`);
                 return;
             }
 
@@ -1775,17 +1769,6 @@
             document.getElementById('observer-quota-count').innerText = quota > 0 ? quota : 'ไม่จำกัด';
             document.getElementById('observer-registration-count').innerText = registrations.length;
 
-            const barWrap = document.getElementById('observer-quota-bar-wrap');
-            if (quota > 0) {
-                barWrap.classList.remove('hidden');
-                const pct = Math.min(100, Math.round((registeredCount / quota) * 100));
-                const bar = document.getElementById('observer-quota-bar');
-                bar.style.width = pct + '%';
-                bar.className = `h-full transition-all ${pct >= 100 ? 'bg-ems-red' : 'bg-ems-yellow'}`;
-            } else {
-                barWrap.classList.add('hidden');
-            }
-
             const canManage = canManageAdminData();
             if (registrations.length === 0) {
                 list.innerHTML = `<li class="py-12 text-center text-apple-muted"><i class="fa-solid fa-user-group text-3xl mb-3 block opacity-40"></i>ยังไม่มีผู้ลงทะเบียนสำหรับหลักสูตร/กิจกรรมนี้</li>`;
@@ -1826,7 +1809,7 @@
         function deleteObserverRegistration(id) {
             if (!guardManagePermission()) return;
             Swal.fire({
-                title: 'ยืนยันการลบ', text: "รายการลงทะเบียนของผู้ประสานงานนี้จะถูกลบถาวร และคืนที่ว่างให้โควตา", icon: 'warning',
+                title: 'ยืนยันการลบ', text: "รายการลงทะเบียนของผู้ประสานงานนี้จะถูกลบถาวร", icon: 'warning',
                 showCancelButton: true, confirmButtonColor: '#FF3B30', cancelButtonColor: '#86868B',
                 confirmButtonText: 'ลบข้อมูล', cancelButtonText: 'ยกเลิก',
                 customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6', cancelButton: 'rounded-full px-6' }
