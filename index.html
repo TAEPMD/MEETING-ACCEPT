@@ -1535,23 +1535,38 @@
         }
 
         // ================= ADMIN: MEETINGS (SYNC SERVER) =================
-        function deleteMeeting(id) {
+        async function deleteMeeting(id) {
             if (!guardManagePermission()) return;
-            Swal.fire({
+            const result = await Swal.fire({
                 title: 'ยืนยันการลบ', text: "ข้อมูลและรายชื่อจะถูกลบถาวร", icon: 'warning',
                 showCancelButton: true, confirmButtonColor: '#FF3B30', cancelButtonColor: '#86868B',
                 confirmButtonText: 'ลบข้อมูล', cancelButtonText: 'ยกเลิก',
                 customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6', cancelButton: 'rounded-full px-6' }
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    db.meetings = db.meetings.filter(m => m.id !== id); delete db.attendees[id];
-                    // ส่งไปลบบน Server
-                    callServer('deleteMeetingFromServer', [id], function(){}, function(err) {
-                        showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถลบข้อมูลได้');
-                    });
-                    renderAdminMeetingsList(); populateMeetingDropdowns();
-                }
             });
+            if (!result.isConfirmed) return;
+
+            // ลบออกจากหน้าจอทันที (optimistic) แต่เก็บของเดิมไว้คืนค่าถ้า Server ลบไม่สำเร็จ
+            // เดิมไม่มีการคืนค่า ทำให้ถ้าลบบน Server ล้มเหลว รายการจะหายไปจากหน้าจอทั้งที่ยังอยู่ในฐานข้อมูลจริง
+            const oldMeetings = db.meetings;
+            const oldAttendeesForMeeting = db.attendees[id];
+            db.meetings = db.meetings.filter(m => m.id !== id);
+            delete db.attendees[id];
+            renderAdminMeetingsList(); populateMeetingDropdowns();
+
+            setGlobalLoading(true, 'กำลังลบข้อมูล...');
+            try {
+                const saved = await callServerAsync('deleteMeetingFromServer', [id]);
+                if (!saved) throw new Error('deleteMeetingFromServer returned false');
+                await refreshDbFromServer();
+            } catch (err) {
+                console.error('Failed to delete meeting:', err);
+                db.meetings = oldMeetings;
+                if (oldAttendeesForMeeting) db.attendees[id] = oldAttendeesForMeeting;
+                renderAdminMeetingsList(); populateMeetingDropdowns();
+                showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถลบข้อมูลได้');
+            } finally {
+                setGlobalLoading(false);
+            }
         }
 
         function getMeetingById(mtgId) {
@@ -1955,10 +1970,12 @@
             
             if(users.length === 0) { list.innerHTML = `<li class="py-12 text-center text-apple-muted"><i class="fa-solid fa-user-plus text-3xl mb-3 block opacity-40"></i>ยังไม่มีรายชื่อในระบบ — เพิ่มรายบุคคล หรือนำเข้าจากไฟล์ CSV ด้านบน</li>`; return; }
 
-            users.forEach((user, idx) => {
+            // สร้าง HTML ทั้งหมดเป็น array แล้วต่อครั้งเดียว — เดิมใช้ list.innerHTML += ในลูป
+            // ซึ่งสั่ง parse ทั้ง list ใหม่ทุกรอบ (O(n²)) ทำให้หน้าจอค้างเมื่อรายชื่อมีจำนวนมาก
+            const rowsHtml = users.map((user, idx) => {
                 const userNameSafe = escapeHtml(escapeJsString(user.name));
                 const uploadBtnId = `upload-btn-${mtgId}-${idx}`;
-                let fileUI = user.pdfUrl 
+                let fileUI = user.pdfUrl
                     ? `<div class="flex items-center gap-2">
                         <span class="text-xs font-medium text-ems-green bg-green-50 px-2.5 py-1 rounded-md border border-green-200 truncate max-w-[100px] sm:max-w-[150px]"><i class="fa-solid fa-file-pdf mr-1"></i> มีไฟล์แนบ</span>
                         ${canManage ? `<button onclick="removeIndividualPDF('${mtgId}', '${userNameSafe}')" class="text-ems-red hover:bg-red-50 p-1.5 rounded-full transition-colors" title="ลบไฟล์"><i class="fa-solid fa-xmark"></i></button>` : ''}
@@ -1971,7 +1988,7 @@
                             <button onclick="removeAttendee('${mtgId}', '${userNameSafe}')" aria-label="ลบรายชื่อ" class="text-apple-muted hover:text-ems-red p-1.5 rounded-full hover:bg-red-50 transition-colors" title="ลบรายชื่อ"><i class="fa-solid fa-trash-can"></i></button>`
                     : '<span class="text-xs text-apple-muted">ดูอย่างเดียว</span>';
 
-                list.innerHTML += `
+                return `
                     <li class="py-3 px-2 flex flex-col sm:flex-row justify-between items-start sm:items-center hover:bg-apple-gray/50 transition-colors gap-3">
                         <div class="flex items-center gap-3 min-w-0 w-full sm:w-auto">
                             <span class="text-apple-muted w-5 text-right text-sm shrink-0">${idx + 1}.</span>
@@ -1988,6 +2005,7 @@
                         </div>
                     </li>`;
             });
+            list.innerHTML = rowsHtml.join('');
         }
 
         // ขนาดไฟล์สูงสุดที่ส่งผ่าน API proxy ได้
@@ -2927,7 +2945,7 @@
             updateSubmitButtonState();
         }
 
-        function submitResponse(e) {
+        async function submitResponse(e) {
             e.preventDefault();
             const mtgId = document.getElementById('user-select-meeting').value; const name = document.getElementById('user-name').value;
             if (currentEditableResponseId && !isEditingExistingResponse) {
@@ -2969,23 +2987,37 @@
                 name, status, reason, timestamp: formatThaiTimestamp(new Date())
             };
 
-            // เก็บอีเมลไว้กับรายชื่อใน local state เพื่อ prefill ครั้งถัดไป (ฝั่ง server บันทึกให้ด้วย)
-            const attendeeRec = (db.attendees[mtgId] || []).find(u => u.name === name);
-            if (attendeeRec && userEmail) attendeeRec.email = userEmail;
+            const submitBtn = document.getElementById('submit-response-btn');
+            const originalBtnHTML = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> กำลังบันทึก...';
 
-            const existingIndex = db.responses.findIndex(r => r.id === data.id);
-            if (existingIndex > -1) db.responses[existingIndex] = data;
-            else db.responses.push(data);
-            renderAdminNotifications();
-            showAdminResponseNotificationToast(data);
+            // รอผลการบันทึกจาก Server ก่อนแจ้งผู้ใช้ว่าสำเร็จ — เดิมยิงแบบ fire-and-forget แล้วโชว์ "บันทึกเรียบร้อย"
+            // ทันทีโดยไม่รอผล ทำให้ถ้าบันทึกจริงล้มเหลว (เช่น เน็ตหลุด) ผู้ใช้เข้าใจผิดว่าตอบรับสำเร็จ ทั้งที่ข้อมูลไม่ถูกบันทึกจริง
+            try {
+                await callServerAsync('saveResponseToServer', [data]);
 
-            callServer('saveResponseToServer', [data], function(){}, function(err) {
+                // เก็บอีเมลไว้กับรายชื่อใน local state เพื่อ prefill ครั้งถัดไป (ฝั่ง server บันทึกให้ด้วย)
+                const attendeeRec = (db.attendees[mtgId] || []).find(u => u.name === name);
+                if (attendeeRec && userEmail) attendeeRec.email = userEmail;
+
+                const existingIndex = db.responses.findIndex(r => r.id === data.id);
+                if (existingIndex > -1) db.responses[existingIndex] = data;
+                else db.responses.push(data);
+                renderAdminNotifications();
+                showAdminResponseNotificationToast(data);
+
+                currentEditableResponseId = data.id;
+                isEditingExistingResponse = false;
+                showSuccessDialog(data);
+            } catch (err) {
                 console.error('Failed to save response:', err);
-            });
-
-            currentEditableResponseId = data.id;
-            isEditingExistingResponse = false;
-            showSuccessDialog(data);
+                showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถบันทึกการตอบรับได้ กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่อีกครั้ง');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalBtnHTML;
+                updateSubmitButtonState();
+            }
         }
 
         function updateSubmitButtonState() {
@@ -3145,33 +3177,6 @@
             } catch (err) {
                 console.error('Failed to save meeting:', err);
                 showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถบันทึกข้อมูลการประชุมได้');
-            } finally {
-                setGlobalLoading(false);
-            }
-        }
-
-        async function toggleMeetingActive(mtgId, nextState) {
-            if (!guardManagePermission()) return;
-
-            const meetingIndex = db.meetings.findIndex(m => m.id === mtgId);
-            if (meetingIndex < 0) return;
-
-            const previousState = db.meetings[meetingIndex].isActive !== false;
-            db.meetings[meetingIndex].isActive = !!nextState;
-            renderAdminMeetingsList();
-            populateMeetingDropdowns();
-
-            setGlobalLoading(true, 'กำลังบันทึกสถานะ...');
-            try {
-                const saved = await callServerAsync('setMeetingActiveStatus', [mtgId, !!nextState]);
-                if (!saved) throw new Error('Meeting not found on server');
-                await refreshDbFromServer();
-            } catch (err) {
-                console.error('Failed to update meeting status:', err);
-                db.meetings[meetingIndex].isActive = previousState;
-                renderAdminMeetingsList();
-                populateMeetingDropdowns();
-                showAlert('error', 'บันทึกไม่สำเร็จ', 'ไม่สามารถอัปเดตสถานะ Active/Inactive ได้');
             } finally {
                 setGlobalLoading(false);
             }
