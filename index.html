@@ -1070,6 +1070,10 @@
         // รายการ meeting id ที่กำลัง auto-save สถานะอยู่เบื้องหลัง — ใช้กันข้อมูลโดน refresh ทับก่อนบันทึกเสร็จ
         const pendingStatusSaves = new Set();
 
+        // รายการ meeting id ที่กำลังแก้ไข/อัปโหลดไฟล์รายชื่อผู้เข้าร่วมอยู่เบื้องหลัง — กัน refreshDbFromServer()
+        // ทับ db.attendees[mtgId] ด้วยข้อมูลเก่า (อาจรวม cache ฝั่งเซิร์ฟเวอร์ที่ค้างได้ถึง 120 วินาที) ระหว่างที่ยังบันทึกไม่เสร็จ
+        const pendingAttendeeSaves = new Set();
+
         function notifyStatusSavePending() {
             Swal.fire({
                 toast: true,
@@ -1096,6 +1100,11 @@
             // ถ้ายังมีการบันทึกสถานะค้างอยู่ ให้ข้ามการ refresh รอบนี้ก่อน กันค่าที่เพิ่งเปลี่ยนโดนทับ
             if (pendingStatusSaves.size > 0) {
                 notifyStatusSavePending();
+                return db;
+            }
+            // เช่นเดียวกัน ถ้ายังมีการแก้ไข/อัปโหลดไฟล์รายชื่อผู้เข้าร่วมค้างอยู่ ให้ข้ามไปก่อน
+            // (ป้องกัน db.attendees[mtgId] ถูกแทนที่ด้วยข้อมูลเก่าระหว่างที่กำลังอัปโหลดไฟล์ ทำให้ไฟล์ที่เพิ่งแนบหาย)
+            if (pendingAttendeeSaves.size > 0) {
                 return db;
             }
 
@@ -1811,7 +1820,7 @@
         function deleteObserverRegistration(id) {
             if (!guardManagePermission()) return;
             Swal.fire({
-                title: 'ยืนยันการลบ', text: "รายการลงทะเบียนของผู้ประสานงานนี้จะถูกลบถาวร", icon: 'warning',
+                title: 'ยืนยันการลบ', text: "รายการลงทะเบียนของผู้ประสานงานนี้จะถูกลบถาวร และคืนโควตาส่วนของผู้ประสานงานท่านนี้", icon: 'warning',
                 showCancelButton: true, confirmButtonColor: '#FF3B30', cancelButtonColor: '#86868B',
                 confirmButtonText: 'ลบข้อมูล', cancelButtonText: 'ยกเลิก',
                 customClass: { popup: 'rounded-3xl font-heading', confirmButton: 'rounded-full px-6', cancelButton: 'rounded-full px-6' }
@@ -1915,7 +1924,9 @@
                 return;
             }
 
+            pendingAttendeeSaves.add(targetMeetingId);
             callServer('saveAttendeesToServer', [targetMeetingId, payload], function(result) {
+                pendingAttendeeSaves.delete(targetMeetingId);
                 if (result === false) {
                     const errorMessage = 'Server returned false';
                     if (showError) showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถซิงค์ข้อมูลรายชื่อไปยัง Sheet ได้');
@@ -1924,6 +1935,7 @@
                 }
                 onSuccess(result);
             }, function(err) {
+                pendingAttendeeSaves.delete(targetMeetingId);
                 const errorMessage = formatSyncError(err);
                 if (showError) showAlert('error', 'ข้อผิดพลาด', 'ไม่สามารถซิงค์รายชื่อไปยัง Sheet ได้: ' + errorMessage);
                 onFailure(errorMessage);
@@ -2047,6 +2059,11 @@
                 uploadBtn.style.opacity = '0.6';
             }
 
+            // กันการ refresh พื้นหลัง (auto-poll ทุก 30 วิ) ทับ db.attendees[mtgId] ระหว่างที่ยังอัปโหลดไฟล์ไม่เสร็จ
+            // ไม่งั้นการอ้างอิง users/userIndex ที่จับไว้ก่อน await จะกลายเป็นอาเรย์เก่าที่หลุดจาก db แล้ว
+            // ทำให้ไฟล์ที่เพิ่งแนบไม่ถูกบันทึกจริง (ดูเหมือนไฟล์หายไป)
+            pendingAttendeeSaves.add(mtgId);
+
             const reader = new FileReader();
             reader.onload = async function(ev) {
                 try {
@@ -2069,9 +2086,17 @@
                         throw new Error((result && result.error) || 'อัปโหลดลง Drive ไม่สำเร็จ');
                     }
 
-                    users[userIndex].pdfUrl = result.url;
-                    users[userIndex].pdfName = result.name;
-                    users[userIndex].fileId = result.fileId;
+                    // ค้นหา user รายการนี้ใหม่จาก db.attendees[mtgId] ปัจจุบัน (ไม่ใช้ users/userIndex ที่จับไว้ก่อน await)
+                    // เผื่อระหว่างอัปโหลดมีการรีเฟรชข้อมูลเกิดขึ้นจนอาเรย์เดิมหลุดจาก db ไปแล้ว
+                    const currentUsers = db.attendees[mtgId] || [];
+                    const currentIndex = currentUsers.findIndex(u => u.name.trim() === name.trim());
+                    if (currentIndex === -1) {
+                        throw new Error('ไม่พบรายชื่อนี้ในระบบแล้ว (ข้อมูลอาจถูกแก้ไขจากที่อื่น) กรุณารีเฟรชหน้าจอแล้วลองใหม่');
+                    }
+
+                    currentUsers[currentIndex].pdfUrl = result.url;
+                    currentUsers[currentIndex].pdfName = result.name;
+                    currentUsers[currentIndex].fileId = result.fileId;
 
                     syncAttendeesToServer(mtgId, {
                         onSuccess: function() {
@@ -2088,11 +2113,13 @@
                     console.error('Failed to upload attendee file:', err);
                     showAlert('error', 'อัปโหลดไม่สำเร็จ', String((err && err.message) || err));
                 } finally {
+                    pendingAttendeeSaves.delete(mtgId);
                     restoreButton();
                     resetInput();
                 }
             };
             reader.onerror = function() {
+                pendingAttendeeSaves.delete(mtgId);
                 restoreButton();
                 resetInput();
                 showAlert('error', 'อ่านไฟล์ไม่สำเร็จ', 'ไม่สามารถอ่านไฟล์ที่เลือกได้ กรุณาลองใหม่อีกครั้ง');
